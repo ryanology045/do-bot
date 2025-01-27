@@ -26,6 +26,8 @@ COPY app/ /app/
 # test
 RUN echo "DEBUG: Listing /app" && ls -R /app
 
+ENV PYTHONPATH=/app
+
 # Expose port 3000 for the application
 EXPOSE 3000
 
