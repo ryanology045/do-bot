@@ -1,8 +1,8 @@
 # plugins/plugin_manager.py
-"""
-Plugin manager to load and initialize plugin modules. 
-Allows a minimal "core" while advanced features live in separate files.
-"""
+#"""
+#Plugin manager to load and initialize plugin modules. 
+#Allows a minimal "core" while advanced features live in separate files.
+#"""
 
 import importlib
 import os
