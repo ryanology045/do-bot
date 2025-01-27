@@ -20,8 +20,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
-COPY . /app
+# Copy the application code from app/ to /app/
+COPY app/ /app/
 
 # Expose port 3000 for the application
 EXPOSE 3000
