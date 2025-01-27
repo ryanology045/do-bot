@@ -12,6 +12,10 @@ SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET")
 SLACK_APP_TOKEN = os.environ.get("SLACK_APP_TOKEN")  # For Socket Mode
 
+# Validate required environment variables
+if not SLACK_BOT_TOKEN or not SLACK_SIGNING_SECRET:
+    raise ValueError("SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET must be set as environment variables.")
+
 # Create the Slack Bolt App
 # If signing_secret is None, some features may not work properly
 # but we allow it for demonstration. In production, you must provide the signing secret.
