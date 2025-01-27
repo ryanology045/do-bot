@@ -25,11 +25,11 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t my-slackbot:latest .
+          docker build -t do-bot:latest .
 
       - name: Tag Docker image
         run: |
-          docker tag my-slackbot:latest ${{ secrets.ECR_REPO_URI }}:latest
+          docker tag do-bot:latest ${{ secrets.ECR_REPO_URI }}:latest
 
       - name: Push Docker image to ECR
         run: |
