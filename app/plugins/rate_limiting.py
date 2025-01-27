@@ -7,6 +7,7 @@ Includes Slack commands to override:
     - "@BotName set per second limit 2"
 """
 
+import re
 import time
 from datetime import datetime, timedelta
 from collections import defaultdict
