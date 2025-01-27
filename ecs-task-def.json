@@ -4,7 +4,7 @@
   "containerDefinitions": [
     {
       "name": "do-bot",
-      "image": "248189924595.dkr.ecr.us-east-2.amazonaws.com/do-bot:latest",  # Placeholder for the Docker image URI
+      "image": "248189924595.dkr.ecr.us-east-2.amazonaws.com/do-bot:latest", 
       "essential": true,
       "portMappings": [
         {
@@ -18,15 +18,15 @@
       "environment": [
         {
           "name": "ECS_SERVICE",
-          "value": "do-bot"
+          "value": "${ECS_SERVICE}"
         },
         {
           "name": "PORT",
-          "value": "3000"
+          "value": "${PORT}"
         },
         {
-          "name": "GITHUB_OWNER",
-          "value": "ryanology045"
+          "name": "GH_OWNER",
+          "value": "${GH_OWNER}"
         },
         {
           "name": "AWS_SECRET_ACCESS_KEY",
@@ -34,11 +34,11 @@
         },
         {
           "name": "AWS_DEFAULT_REGION",
-          "value": "us-east-2"
+          "value": "${AWS_DEFAULT_REGION}"
         },
         {
-          "name": "GITHUB_REPO_NAME",
-          "value": "ryanology045/do-bot"
+          "name": "GH_REPO_NAME",
+          "value": "${GH_REPO_NAME}"
         },
         {
           "name": "GH_TOKEN",
@@ -46,7 +46,7 @@
         },
         {
           "name": "ECS_CLUSTER",
-          "value": "do-bot"
+          "value": "${ECS_CLUSTER}"
         },
         {
           "name": "SLACK_SIGNING_SECRET",
@@ -57,8 +57,8 @@
           "value": "${ADMIN_USER_IDS}"
         },
         {
-          "name": "GITHUB_REPO",
-          "value": "do-bot"
+          "name": "GH_REPO",
+          "value": "${GH_REPO}"
         },
         {
           "name": "AWS_ACCESS_KEY_ID",
@@ -70,7 +70,7 @@
         },
         {
           "name": "ECS_TASK_DEFINITION",
-          "value": "do-bot"
+          "value": "${ECS_TASK_DEFINITION}"
         },
         {
           "name": "OPENAI_API_KEY",
