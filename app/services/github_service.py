@@ -1,8 +1,8 @@
 # services/github_service.py
-"""
-Service for interacting with GitHub to commit, tag, merge, or rollback changes.
-All GitHub credentials come from environment variables or GitHub Actions secrets.
-"""
+#"""
+#Service for interacting with GitHub to commit, tag, merge, or rollback changes.
+#All GitHub credentials come from environment variables or GitHub Actions secrets.
+#"""
 
 import os
 from github import Github
