@@ -23,6 +23,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code from app/ to /app/
 COPY app/ /app/
 
+# test
+RUN echo "DEBUG: Listing /app" && ls -R /app
+
 # Expose port 3000 for the application
 EXPOSE 3000
 
