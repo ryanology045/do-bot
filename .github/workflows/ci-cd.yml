@@ -8,36 +8,34 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out the repository
         uses: actions/checkout@v3
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-
-      - name: Log in to Amazon ECR
-        run: |
-          aws ecr get-login-password --region ${{ secrets.AWS_DEFAULT_REGION }} \
-          | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URI }}
-
+          region: ${{ secrets.AWS_DEFAULT_REGION }}
+      
       - name: Build Docker image
         run: |
-          docker build -t do-bot:latest .
-
-      - name: Tag Docker image
-        run: |
-          docker tag do-bot:latest ${{ secrets.ECR_REPO_URI }}:latest
-
+          IMAGE_URI=${{ secrets.ECR_REPO_URI }}:latest
+          docker build -t $IMAGE_URI .
+      
       - name: Push Docker image to ECR
         run: |
-          docker push ${{ secrets.ECR_REPO_URI }}:latest
+          IMAGE_URI=${{ secrets.ECR_REPO_URI }}:latest
+          docker push $IMAGE_URI
 
 #      - name: Deploy to ECS
-#        run: |
-#          aws ecs update-service \
-#            --cluster YOUR_ECS_CLUSTER_NAME \
-#            --service YOUR_ECS_SERVICE_NAME \
-#            --force-new-deployment
+#        uses: aws-actions/amazon-ecs-deploy@v1
+#        with:
+#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#          region: ${{ secrets.AWS_DEFAULT_REGION }}
+#          task-definition: "<YOUR_ECS_TASK_DEFINITION_NAME>"
+#          service: "<YOUR_ECS_SERVICE_NAME>"
+#          cluster: "<YOUR_ECS_CLUSTER_NAME>"
+#          wait-for-service-stability: true
+#          force-new-deployment: true
