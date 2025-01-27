@@ -35,12 +35,12 @@ def create_upgrade_branch() -> str:
     Raises:
         Exception: If the branch creation fails.
     """
-    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/git/refs"
-    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GH_OWNER')}/{os.environ.get('GH_REPO')}/git/refs"
+    GITHUB_TOKEN = os.environ.get("GH_TOKEN")
     
-    if not GITHUB_TOKEN:
-        logger.error("GITHUB_TOKEN is not set.")
-        raise Exception("GITHUB_TOKEN is not set.")
+    if not GH_TOKEN:
+        logger.error("GH_TOKEN is not set.")
+        raise Exception("GH_TOKEN is not set.")
     
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -49,7 +49,7 @@ def create_upgrade_branch() -> str:
     
     # Fetch the latest commit SHA from main branch
     try:
-        main_ref_url = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/git/ref/heads/main"
+        main_ref_url = f"https://api.github.com/repos/{os.environ.get('GH_OWNER')}/{os.environ.get('GH_REPO')}/git/ref/heads/main"
         response = requests.get(main_ref_url, headers=headers)
         response.raise_for_status()
         main_commit_sha = response.json()['object']['sha']
@@ -91,12 +91,12 @@ def commit_file_to_branch(branch_name: str, file_path: str, content: str, commit
     Raises:
         Exception: If the commit fails.
     """
-    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/contents/{file_path}"
-    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GH_OWNER')}/{os.environ.get('GH_REPO')}/contents/{file_path}"
+    GITHUB_TOKEN = os.environ.get("GH_TOKEN")
     
     if not GITHUB_TOKEN:
-        logger.error("GITHUB_TOKEN is not set.")
-        raise Exception("GITHUB_TOKEN is not set.")
+        logger.error("GH_TOKEN is not set.")
+        raise Exception("GH_TOKEN is not set.")
     
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -149,12 +149,12 @@ def merge_upgrade_branch(branch_name: str):
     Raises:
         Exception: If the merge fails.
     """
-    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/merges"
-    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GH_OWNER')}/{os.environ.get('GH_REPO')}/merges"
+    GITHUB_TOKEN = os.environ.get("GH_TOKEN")
     
     if not GITHUB_TOKEN:
-        logger.error("GITHUB_TOKEN is not set.")
-        raise Exception("GITHUB_TOKEN is not set.")
+        logger.error("GH_TOKEN is not set.")
+        raise Exception("GH_TOKEN is not set.")
     
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -185,12 +185,12 @@ def delete_upgrade_branch(branch_name: str):
     Raises:
         Exception: If the deletion fails.
     """
-    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/git/refs/heads/{branch_name}"
-    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GH_OWNER')}/{os.environ.get('GH_REPO')}/git/refs/heads/{branch_name}"
+    GITHUB_TOKEN = os.environ.get("GH_TOKEN")
     
     if not GITHUB_TOKEN:
-        logger.error("GITHUB_TOKEN is not set.")
-        raise Exception("GITHUB_TOKEN is not set.")
+        logger.error("GH_TOKEN is not set.")
+        raise Exception("GH_TOKEN is not set.")
     
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -217,12 +217,12 @@ def get_last_deployment_tag() -> str:
     Raises:
         Exception: If unable to fetch tags or no tags are found.
     """
-    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/tags"
-    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GH_OWNER')}/{os.environ.get('GH_REPO')}/tags"
+    GITHUB_TOKEN = os.environ.get("GH_TOKEN")
     
     if not GITHUB_TOKEN:
-        logger.error("GITHUB_TOKEN is not set.")
-        raise Exception("GITHUB_TOKEN is not set.")
+        logger.error("GH_TOKEN is not set.")
+        raise Exception("GH_TOKEN is not set.")
     
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -259,12 +259,12 @@ def rollback_to_tag(tag: str):
     logger.info(f"Attempting to roll back to tag '{tag}'...")
 
     # 1) Fetch release info from GitHub
-    github_token = os.environ.get("GITHUB_TOKEN")
-    github_owner = os.environ.get("GITHUB_OWNER")  # e.g. "YourName"
-    github_repo  = os.environ.get("GITHUB_REPO")   # e.g. "YourRepo"
+    github_token = os.environ.get("GH_TOKEN")
+    github_owner = os.environ.get("GH_OWNER")  # e.g. "YourName"
+    github_repo  = os.environ.get("GH_REPO")   # e.g. "YourRepo"
 
     if not all([github_token, github_owner, github_repo]):
-        msg = "GITHUB_TOKEN, GITHUB_OWNER, or GITHUB_REPO not set in env."
+        msg = "GH_TOKEN, GH_OWNER, or GH_REPO not set in env."
         logger.error(msg)
         raise Exception(msg)
 
@@ -313,7 +313,7 @@ def _update_ecs_service(image_uri: str):
     ecs_cluster = os.environ.get("ECS_CLUSTER")        # e.g. "my-ecs-cluster"
     ecs_service = os.environ.get("ECS_SERVICE")        # e.g. "my-ecs-service"
     ecs_taskdef = os.environ.get("ECS_TASK_DEFINITION")# e.g. "my-ecs-task-def-family"
-    region      = os.environ.get("AWS_DEFAULT_REGION","us-east-1")
+    region      = os.environ.get("AWS_DEFAULT_REGION","us-east-2")
 
     if not all([ecs_cluster, ecs_service, ecs_taskdef]):
         msg = "ECS_CLUSTER, ECS_SERVICE, or ECS_TASK_DEFINITION not set in env. Cannot update ECS."
