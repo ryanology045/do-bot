@@ -1,8 +1,8 @@
 # core/main.py
-"""
-Main entry point: starts the Slack Bolt app with an HTTP server and optionally Socket Mode.
-Also initializes the scheduler and plugin loading.
-"""
+#"""
+#Main entry point: starts the Slack Bolt app with an HTTP server and optionally Socket Mode.
+#Also initializes the scheduler and plugin loading.
+#"""
 
 import os
 import threading
