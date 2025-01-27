@@ -1,0 +1,95 @@
+{
+  "family": "do-bot-task-def",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "do-bot",
+      "image": "248189924595.dkr.ecr.us-east-2.amazonaws.com/do-bot:latest",  # Placeholder for the Docker image URI
+      "essential": true,
+      "portMappings": [
+        {
+          "name": "do-bot",
+          "containerPort": 3000,
+          "hostPort": 3000,
+          "protocol": "tcp",
+          "appProtocol": "http"
+        }
+      ],
+      "environment": [
+        {
+          "name": "ECS_SERVICE",
+          "value": "do-bot"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
+        },
+        {
+          "name": "GITHUB_OWNER",
+          "value": "ryanology045"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "value": "${AWS_SECRET_ACCESS_KEY}"
+        },
+        {
+          "name": "AWS_DEFAULT_REGION",
+          "value": "us-east-2"
+        },
+        {
+          "name": "GITHUB_REPO_NAME",
+          "value": "ryanology045/do-bot"
+        },
+        {
+          "name": "GH_TOKEN",
+          "value": "${GH_TOKEN}"
+        },
+        {
+          "name": "ECS_CLUSTER",
+          "value": "do-bot"
+        },
+        {
+          "name": "SLACK_SIGNING_SECRET",
+          "value": "${SLACK_SIGNING_SECRET}"
+        },
+        {
+          "name": "ADMIN_USER_IDS",
+          "value": "${ADMIN_USER_IDS}"
+        },
+        {
+          "name": "GITHUB_REPO",
+          "value": "do-bot"
+        },
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "value": "${AWS_ACCESS_KEY_ID}"
+        },
+        {
+          "name": "ECR_REPO_URI",
+          "value": "${ECR_REPO_URI}"
+        },
+        {
+          "name": "ECS_TASK_DEFINITION",
+          "value": "do-bot"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "value": "${OPENAI_API_KEY}"
+        },
+        {
+          "name": "SLACK_APP_TOKEN",
+          "value": "${SLACK_APP_TOKEN}"
+        },
+        {
+          "name": "SLACK_BOT_TOKEN",
+          "value": "${SLACK_BOT_TOKEN}"
+        }
+      ]
+    }
+  ],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "256",
+  "memory": "512"
+}
