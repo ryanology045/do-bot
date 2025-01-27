@@ -36,11 +36,21 @@ jobs:
 
 
       # Uncomment and configure the following steps if you wish to deploy to ECS
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy@v1.12.0
+      # Step 7: Render Task Definition with Updated Image
+      - name: Render Task Definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: "do-bot"
-          service: "do-bot"
-          cluster: "do-bot"
+          task-definition: ecs-task-def.json  # Path to your task definition template
+          container-name: "do-bot"             # Name of the container in the task definition
+          image: ${{ secrets.AWS_ECR_REGISTRY }}/do-bot:latest
+
+      # Step 8: Deploy to ECS
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: "do-bot"            # Replace with your ECS service name
+          cluster: "do-bot"            # Replace with your ECS cluster name
           wait-for-service-stability: true
           force-new-deployment: true
