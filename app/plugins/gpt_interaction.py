@@ -1,8 +1,8 @@
 # plugins/gpt_interaction.py
-"""
-Plugin for handling ChatGPT-like interactions via the OpenAI API.
-Includes a queue for each "instance" to ensure sequential requests.
-"""
+#"""
+#Plugin for handling ChatGPT-like interactions via the OpenAI API.
+#Includes a queue for each "instance" to ensure sequential requests.
+#"""
 
 import re
 from slack_bolt import App
