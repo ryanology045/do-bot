@@ -5,7 +5,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_bolt.adapter.flask import SlackRequestHandler
 from services.scheduler_service import scheduler_start
-from plugins.plugin_manager import PluginManager
+from plugins.plugin_manager import load_plugins
 from flask import Flask, request, make_response
 
 # 1) Create your Slack Bolt App
@@ -33,7 +33,7 @@ def slack_events():
     return handler.handle(request)
 
 # Load plugins
-PluginManager.load_plugins(bolt_app)
+load_plugins(bolt_app)
 
 def main():
     # Start the scheduler in a separate thread
