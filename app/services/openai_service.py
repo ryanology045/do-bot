@@ -1,8 +1,8 @@
 # services/openai_service.py
-"""
-Service for interacting with OpenAI models (Chat Completions, rewrites, etc.).
-Implements a per-instance queue system for sequential requests.
-"""
+#"""
+#Service for interacting with OpenAI models (Chat Completions, rewrites, etc.).
+#Implements a per-instance queue system for sequential requests.
+#"""
 
 import os
 import openai
