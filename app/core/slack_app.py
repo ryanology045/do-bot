@@ -1,7 +1,7 @@
 # core/slack_app.py
-"""
-Slack Bolt app initialization for both Socket Mode and HTTP event subscriptions.
-"""
+#"""
+#Slack Bolt app initialization for both Socket Mode and HTTP event subscriptions.
+#"""
 
 import os
 from slack_bolt import App
