@@ -39,8 +39,8 @@ jobs:
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy@v1
         with:
-          task-definition: "<YOUR_ECS_TASK_DEFINITION_NAME>"
-          service: "<YOUR_ECS_SERVICE_NAME>"
-          cluster: "<YOUR_ECS_CLUSTER_NAME>"
+          task-definition: "do-bot"
+          service: "do-bot"
+          cluster: "do-bot"
           wait-for-service-stability: true
           force-new-deployment: true
