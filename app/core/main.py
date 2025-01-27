@@ -8,6 +8,7 @@ import os
 import threading
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+from slack_bolt.adapter.flask import SlackRequestHandler
 from core.slack_app import app, start_socket_mode
 from services.scheduler_service import scheduler_start
 from plugins.plugin_manager import PluginManager
@@ -15,9 +16,18 @@ from slack_bolt.oauth.oauth_settings import OAuthSettings
 
 from flask import Flask, request, make_response
 
-# Note: Slack Bolt can run natively with app.start(port=3000), but we also want to add /health route.
-# We'll integrate with the underlying Flask server. Slack Bolt 1.17+ automatically uses a Flask backend.
-flask_app = app.web_app
+# 1) Create your Slack Bolt App
+app = App(
+    token=os.environ.get("SLACK_BOT_TOKEN"),
+    signing_secret=os.environ.get("SLACK_SIGNING_SECRET"),
+    # Add other configurations if necessary
+)
+
+# 2) Create a Flask instance
+flask_app = Flask(__name__)
+
+# 3) Tie Slack Bolt to the Flask instance
+handler = SlackRequestHandler(app)
 
 # Health check endpoint (for ECS)
 @flask_app.route("/health", methods=["GET"])
