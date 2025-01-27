@@ -1,7 +1,7 @@
 # plugins/model_manager.py
-"""
-Plugin to dynamically add/remove GPT model references.
-"""
+#"""
+#Plugin to dynamically add/remove GPT model references.
+#"""
 
 from slack_bolt import App
 from core.slack_app import app
