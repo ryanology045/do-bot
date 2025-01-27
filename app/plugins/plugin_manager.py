@@ -1,27 +1,29 @@
 # plugins/plugin_manager.py
-#"""
-#Plugin manager to load and initialize plugin modules. 
-#Allows a minimal "core" while advanced features live in separate files.
-#"""
-
 import importlib
-import os
+import pkgutil
+import logging
+from slack_bolt import App
 
-PLUGIN_MODULES = [
-    "plugins.gpt_interaction",
-    "plugins.self_upgrade",
-    "plugins.rate_limiting",
-    "plugins.rollback",
-    "plugins.model_manager",
-]
+logger = logging.getLogger(__name__)
 
-class PluginManager:
-    @staticmethod
-    def load_plugins(app):
-        """
-        Dynamically import and initialize the defined plugin modules.
-        Each plugin file can register its handlers with the Slack 'app' object.
-        """
-        for module_path in PLUGIN_MODULES:
-            importlib.import_module(module_path)  # side effect: modules attach to 'app'
-        print("Plugins loaded:", PLUGIN_MODULES)
+def load_plugins(app: App, plugins_package: str = "plugins"):
+    """
+    Dynamically load all plugins in the specified plugins package.
+
+    Args:
+        app (App): The Slack Bolt App instance to register event listeners with.
+        plugins_package (str): The Python package where plugins are located.
+    """
+    package = importlib.import_module(plugins_package)
+    for _, module_name, is_pkg in pkgutil.iter_modules(package.__path__):
+        if is_pkg:
+            continue  # Skip sub-packages
+        try:
+            module = importlib.import_module(f"{plugins_package}.{module_name}")
+            if hasattr(module, "register"):
+                module.register(app)
+                logger.info(f"Loaded plugin: {module_name}")
+            else:
+                logger.warning(f"Plugin {module_name} does not have a register(app) function.")
+        except Exception as e:
+            logger.error(f"Failed to load plugin {module_name}: {e}")
