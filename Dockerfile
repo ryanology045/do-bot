@@ -20,15 +20,15 @@ RUN pip install --upgrade pip setuptools wheel
 WORKDIR /app
 
 # Copy requirements
-COPY requirements.txt /app/
+COPY requirements.txt .
 
 # Install Python dependencies with retry mechanism and explicit PyPI index
 RUN pip install --no-cache-dir -r requirements.txt --retries 5 --timeout 30 --index-url https://pypi.org/simple -v
 
 # Copy the rest of the application code
-COPY . /app/
+COPY app/ /app/
 
 ENV PYTHONPATH=/app
 
 # Define the default command
-CMD ["python", "core/main.py"]
+CMD ["python", "-u", "core/main.py"]
