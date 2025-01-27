@@ -1,40 +1,32 @@
-# Use a lightweight Python base image
+# Use an official Python runtime as a parent image
 FROM python:3.9-slim
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
     build-essential \
     libffi-dev \
     libssl-dev \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory
+# Upgrade pip, setuptools, and wheel
+RUN pip install --upgrade pip setuptools wheel
+
+# Set work directory
 WORKDIR /app
 
-# Upgrade pip to the latest version
-RUN pip install --upgrade pip
+# Copy requirements
+COPY requirements.txt /app/
 
-# Copy the requirements file first for better caching
-COPY requirements.txt .
+# Install Python dependencies with retry mechanism
+RUN pip install --no-cache-dir -r requirements.txt --retries 5 --timeout 30
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the rest of the application code
+COPY . /app/
 
-RUN pip list
-
-# Copy the application code from app/ to /app/
-COPY app/ /app/
-
-# test
-RUN echo "DEBUG: Listing /app" && ls -R /app
-
-ENV PYTHONPATH=/app
-
-# Expose port 3000 for the application
-EXPOSE 3000
-
-# Environment variables
-ENV PORT=3000
-
-# Start the application
-CMD ["python", "-u", "core/main.py"]
+# Define the default command
+CMD ["python", "core/main.py"]
