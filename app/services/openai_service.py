@@ -192,3 +192,15 @@ class ChatGPTSessionManager:
 
         # 6. Return the assistant's generated reply
         return result_container[0]
+
+# ---------------------------------------------------------------------
+# Provide a single session_manager instance + a helper function
+# ---------------------------------------------------------------------
+_session_manager = ChatGPTSessionManager()
+
+def generate_response(model: str, instance_id: str, user_text: str) -> str:
+    """
+    Wraps the ChatGPTSessionManager instance method.
+    This is the function you can import and call directly.
+    """
+    return _session_manager.generate_response(model, instance_id, user_text)
