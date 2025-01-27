@@ -20,6 +20,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN pip list
+
 # Copy the application code from app/ to /app/
 COPY app/ /app/
 
