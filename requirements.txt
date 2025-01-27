@@ -3,4 +3,7 @@ slack_sdk>=3.20.2,<4.0.0
 openai==0.27.2
 PyGithub==1.58.2
 apscheduler==3.9.1
-flask==2.2.2
+
+# Pin to a modern Flask + Werkzeug that won't use url_quote
+Flask==2.2.3
+Werkzeug==2.2.3
