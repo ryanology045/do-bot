@@ -1,9 +1,9 @@
 # plugins/rate_limiting.py
-"""
-Plugin that enforces basic user or global rate limits.
-Default: 1 request/second, 50 requests/day per user. 
-Includes Slack commands to override: "@BotName set daily request limit 100" etc.
-"""
+#"""
+#Plugin that enforces basic user or global rate limits.
+#Default: 1 request/second, 50 requests/day per user. 
+#Includes Slack commands to override: "@BotName set daily request limit 100" etc.
+#"""
 
 import time
 from datetime import datetime, timedelta
