@@ -1,9 +1,9 @@
 # services/scheduler_service.py
-"""
-In-process scheduler using APScheduler for periodic tasks.
-This file configures and starts the scheduler, 
-and you can define cron jobs or intervals for each plugin.
-"""
+#"""
+#In-process scheduler using APScheduler for periodic tasks.
+#This file configures and starts the scheduler, 
+#and you can define cron jobs or intervals for each plugin.
+#"""
 
 from apscheduler.schedulers.background import BackgroundScheduler
 import datetime
