@@ -28,5 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt --retries 5 --timeout 30 --in
 # Copy the rest of the application code
 COPY . /app/
 
+ENV PYTHONPATH=/app
+
 # Define the default command
 CMD ["python", "core/main.py"]
