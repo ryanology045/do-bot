@@ -8,37 +8,31 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Check out the repository
       - name: Check out the repository
         uses: actions/checkout@v3
 
-      # Step 2: Configure AWS credentials and region
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2  # Ensure this matches your ECR and ECS regions
+          aws-region: "us-east-2"  # Ensure this matches your ECR and ECS regions
 
-      # Step 3: Log in to Amazon ECR
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
         with:
-          registry-type: private  # Optional: defaults to 'private', specify if needed
+          registry-type: private  # Optional: defaults to 'private'
 
-      # Step 4: Build Docker image
       - name: Build Docker image
         run: |
           IMAGE_URI=${{ secrets.ECR_REPO_URI }}:latest
           docker build -t $IMAGE_URI .
 
-      # Step 5: Push Docker image to ECR
       - name: Push Docker image to ECR
         run: |
           IMAGE_URI=${{ secrets.ECR_REPO_URI }}:latest
           docker push $IMAGE_URI
 
-      # Step 6: (Optional) Deploy to ECS
       # Uncomment and configure the following steps if you wish to deploy to ECS
       # - name: Deploy to ECS
       #   uses: aws-actions/amazon-ecs-deploy@v1
