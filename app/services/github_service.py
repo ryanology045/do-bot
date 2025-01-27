@@ -1,76 +1,149 @@
 # services/github_service.py
-#"""
-#Service for interacting with GitHub to commit, tag, merge, or rollback changes.
-#All GitHub credentials come from environment variables or GitHub Actions secrets.
-#"""
+"""
+Service for interacting with GitHub APIs.
+Includes functions for rollback operations using GitHub tags.
+"""
 
 import os
-from github import Github
-import datetime
+import re
+import requests
+import logging
+import boto3
 
-# In your GitHub repository, you might have:
-# GITHUB_TOKEN is from GitHub Secrets (set in GitHub Actions or ECS env)
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", None)
-GITHUB_REPO_NAME = os.environ.get("GITHUB_REPO_NAME", "owner/my_slackbot_project")
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-def get_github_repo():
+# Create a console handler with a higher log level
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# Create a formatter and set it for the handler
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+
+# Add the handler to the logger if it doesn't already have handlers
+if not logger.hasHandlers():
+    logger.addHandler(console_handler)
+
+def rollback_to_tag(tag: str):
+    """
+    Performs a rollback to the specified GitHub tag.
+    This function updates the ECS service to use the Docker image associated with the tag.
+
+    Args:
+        tag (str): The GitHub tag to rollback to.
+
+    Raises:
+        Exception: If the rollback process fails.
+    """
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/releases/tags/{tag}"
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+
     if not GITHUB_TOKEN:
-        raise ValueError("No GITHUB_TOKEN set. Cannot interact with GitHub.")
-    g = Github(GITHUB_TOKEN)
-    return g.get_repo(GITHUB_REPO_NAME)
+        logger.error("GITHUB_TOKEN is not set.")
+        raise Exception("GITHUB_TOKEN is not set.")
 
-def create_upgrade_branch(branch_prefix="upgrade-"):
-    """
-    Create a new Git branch from 'main' (or 'master') for the upgrade.
-    """
-    repo = get_github_repo()
-    main_ref = repo.get_git_ref("heads/main")
-    new_branch_name = branch_prefix + datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    repo.create_git_ref(ref="refs/heads/" + new_branch_name, sha=main_ref.object.sha)
-    return new_branch_name
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
 
-def commit_file_to_branch(branch_name, file_path, new_content, commit_message="Upgrade commit"):
-    """
-    Commit a file to a branch in GitHub.
-    """
-    repo = get_github_repo()
-    # Try to get the file if it exists
+    # Fetch the release information
+    response = requests.get(GITHUB_API_URL, headers=headers)
+    if response.status_code != 200:
+        logger.error(f"Failed to fetch release for tag '{tag}': {response.status_code} {response.text}")
+        raise Exception(f"Failed to fetch release for tag '{tag}'.")
+
+    release_data = response.json()
+    if not release_data:
+        logger.error(f"No release data found for tag '{tag}'.")
+        raise Exception(f"No release data found for tag '{tag}'.")
+
+    # Extract Docker image URI from release notes
+    image_uri = extract_image_uri(release_data.get("body", ""))
+    if not image_uri:
+        logger.error("Docker image URI not found in release notes.")
+        raise Exception("Docker image URI not found in release notes.")
+
+    # Update ECS service with the new image URI
     try:
-        contents = repo.get_contents(file_path, ref=branch_name)
-        repo.update_file(contents.path, commit_message, new_content, contents.sha, branch=branch_name)
-    except:
-        # File doesn't exist, create it
-        repo.create_file(file_path, commit_message, new_content, branch=branch_name)
+        update_ecs_service(image_uri)
+        logger.info(f"Successfully rolled back to tag '{tag}' with image '{image_uri}'.")
+    except Exception as e:
+        logger.error(f"Failed to rollback to tag '{tag}': {e}")
+        raise
 
-def merge_branch(branch_name, base_branch="main"):
+def extract_image_uri(release_body: str) -> str:
     """
-    Merge the branch into main.
-    """
-    repo = get_github_repo()
-    repo.merge(base_branch, branch_name, f"Merging {branch_name} into {base_branch}")
+    Extracts the Docker image URI from the release body.
 
-def merge_upgrade_branch(branch_name):
-    merge_branch(branch_name, "main")
+    Args:
+        release_body (str): The body content of the GitHub release.
 
-def rollback_to_tag(tag):
+    Returns:
+        str: The Docker image URI if found, else an empty string.
     """
-    Sample rollback method: create a new branch from the specified tag, then merge to main, or reset main to that tag.
-    For demonstration, we do a simple reset by creating a ref from the tag to main. 
-    In real usage, you'd ensure safe forced push or protected branch rules are considered.
+    match = re.search(r"Image URI:\s*(\S+)", release_body)
+    if match:
+        return match.group(1)
+    return ""
+
+def update_ecs_service(image_uri: str):
     """
-    repo = get_github_repo()
-    # 1. find the tag
-    tag_ref = None
+    Updates the ECS service to use the specified Docker image URI.
+
+    Args:
+        image_uri (str): The Docker image URI to deploy.
+
+    Raises:
+        Exception: If the ECS service update fails.
+    """
+    import boto3
+
+    ECS_CLUSTER = os.environ.get("ECS_CLUSTER")
+    ECS_SERVICE = os.environ.get("ECS_SERVICE")
+    TASK_DEFINITION = os.environ.get("ECS_TASK_DEFINITION")
+
+    if not ECS_CLUSTER or not ECS_SERVICE or not TASK_DEFINITION:
+        logger.error("ECS_CLUSTER, ECS_SERVICE, and ECS_TASK_DEFINITION must be set as environment variables.")
+        raise Exception("Missing ECS deployment environment variables.")
+
+    ecs_client = boto3.client('ecs', region_name=os.environ.get("AWS_DEFAULT_REGION"))
+
     try:
-        tag_ref = repo.get_git_ref(f"tags/{tag}")
-    except:
-        raise ValueError(f"Tag {tag} not found in repository.")
-    
-    # 2. get main ref
-    main_ref = repo.get_git_ref("heads/main")
-    
-    # 3. update main ref to point to the tag's commit (force=True might be needed)
-    main_ref.edit(tag_ref.object.sha, force=True)
-    
-    # (re)deploy on ECS if your pipeline triggers on main updates
-    return
+        # Describe the current task definition
+        response = ecs_client.describe_task_definition(taskDefinition=TASK_DEFINITION)
+        task_def = response['taskDefinition']
+
+        # Update the image in the container definitions
+        updated_container_definitions = []
+        for container in task_def['containerDefinitions']:
+            if container['name'] == 'do-bot':  # Replace with your container name
+                container['image'] = image_uri
+                logger.info(f"Updated container '{container['name']}' image to '{image_uri}'.")
+            updated_container_definitions.append(container)
+
+        # Register the new task definition
+        new_task_def = ecs_client.register_task_definition(
+            family=task_def['family'],
+            taskRoleArn=task_def['taskRoleArn'],
+            executionRoleArn=task_def['executionRoleArn'],
+            networkMode=task_def['networkMode'],
+            containerDefinitions=updated_container_definitions,
+            requiresCompatibilities=task_def['requiresCompatibilities'],
+            cpu=task_def['cpu'],
+            memory=task_def['memory']
+        )
+
+        # Update the ECS service to use the new task definition
+        ecs_client.update_service(
+            cluster=ECS_CLUSTER,
+            service=ECS_SERVICE,
+            taskDefinition=new_task_def['taskDefinition']['taskDefinitionArn'],
+            forceNewDeployment=True
+        )
+
+        logger.info(f"ECS service '{ECS_SERVICE}' updated to use image '{image_uri}'.")
+    except Exception as e:
+        logger.error(f"Failed to update ECS service: {e}")
+        raise
