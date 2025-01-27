@@ -1,7 +1,7 @@
 # services/github_service.py
 """
 Service for interacting with GitHub APIs.
-Includes functions for rollback operations using GitHub tags.
+Includes functions for rollback and self-upgrade operations using GitHub tags.
 """
 
 import os
@@ -25,125 +25,219 @@ console_handler.setFormatter(formatter)
 if not logger.hasHandlers():
     logger.addHandler(console_handler)
 
-def rollback_to_tag(tag: str):
+def create_upgrade_branch() -> str:
     """
-    Performs a rollback to the specified GitHub tag.
-    This function updates the ECS service to use the Docker image associated with the tag.
-
-    Args:
-        tag (str): The GitHub tag to rollback to.
-
+    Creates a new upgrade branch in GitHub based on the latest main branch.
+    
+    Returns:
+        str: The name of the created branch.
+    
     Raises:
-        Exception: If the rollback process fails.
+        Exception: If the branch creation fails.
     """
-    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/releases/tags/{tag}"
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/git/refs"
     GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
-
+    
     if not GITHUB_TOKEN:
         logger.error("GITHUB_TOKEN is not set.")
         raise Exception("GITHUB_TOKEN is not set.")
-
+    
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-
-    # Fetch the release information
-    response = requests.get(GITHUB_API_URL, headers=headers)
-    if response.status_code != 200:
-        logger.error(f"Failed to fetch release for tag '{tag}': {response.status_code} {response.text}")
-        raise Exception(f"Failed to fetch release for tag '{tag}'.")
-
-    release_data = response.json()
-    if not release_data:
-        logger.error(f"No release data found for tag '{tag}'.")
-        raise Exception(f"No release data found for tag '{tag}'.")
-
-    # Extract Docker image URI from release notes
-    image_uri = extract_image_uri(release_data.get("body", ""))
-    if not image_uri:
-        logger.error("Docker image URI not found in release notes.")
-        raise Exception("Docker image URI not found in release notes.")
-
-    # Update ECS service with the new image URI
+    
+    # Fetch the latest commit SHA from main branch
     try:
-        update_ecs_service(image_uri)
-        logger.info(f"Successfully rolled back to tag '{tag}' with image '{image_uri}'.")
+        main_ref_url = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/git/ref/heads/main"
+        response = requests.get(main_ref_url, headers=headers)
+        response.raise_for_status()
+        main_commit_sha = response.json()['object']['sha']
+        logger.info(f"Latest commit SHA on main: {main_commit_sha}")
     except Exception as e:
-        logger.error(f"Failed to rollback to tag '{tag}': {e}")
+        logger.error(f"Failed to fetch latest commit SHA from main branch: {e}")
+        raise
+    
+    # Define the new branch name
+    import datetime
+    timestamp = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    branch_name = f"self-upgrade-{timestamp}"
+    
+    # Create the new branch
+    data = {
+        "ref": f"refs/heads/{branch_name}",
+        "sha": main_commit_sha
+    }
+    
+    try:
+        response = requests.post(GITHUB_API_URL, headers=headers, json=data)
+        response.raise_for_status()
+        logger.info(f"Created new branch '{branch_name}'.")
+        return branch_name
+    except Exception as e:
+        logger.error(f"Failed to create new branch '{branch_name}': {e}")
         raise
 
-def extract_image_uri(release_body: str) -> str:
+def commit_file_to_branch(branch_name: str, file_path: str, content: str, commit_message: str):
     """
-    Extracts the Docker image URI from the release body.
-
+    Commits a file to the specified branch in GitHub.
+    
     Args:
-        release_body (str): The body content of the GitHub release.
-
-    Returns:
-        str: The Docker image URI if found, else an empty string.
-    """
-    match = re.search(r"Image URI:\s*(\S+)", release_body)
-    if match:
-        return match.group(1)
-    return ""
-
-def update_ecs_service(image_uri: str):
-    """
-    Updates the ECS service to use the specified Docker image URI.
-
-    Args:
-        image_uri (str): The Docker image URI to deploy.
-
+        branch_name (str): The GitHub branch name.
+        file_path (str): The path of the file to commit (e.g., "plugins/new_feature.py").
+        content (str): The content to write to the file.
+        commit_message (str): The commit message.
+    
     Raises:
-        Exception: If the ECS service update fails.
+        Exception: If the commit fails.
     """
-    import boto3
-
-    ECS_CLUSTER = os.environ.get("ECS_CLUSTER")
-    ECS_SERVICE = os.environ.get("ECS_SERVICE")
-    TASK_DEFINITION = os.environ.get("ECS_TASK_DEFINITION")
-
-    if not ECS_CLUSTER or not ECS_SERVICE or not TASK_DEFINITION:
-        logger.error("ECS_CLUSTER, ECS_SERVICE, and ECS_TASK_DEFINITION must be set as environment variables.")
-        raise Exception("Missing ECS deployment environment variables.")
-
-    ecs_client = boto3.client('ecs', region_name=os.environ.get("AWS_DEFAULT_REGION"))
-
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/contents/{file_path}"
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    
+    if not GITHUB_TOKEN:
+        logger.error("GITHUB_TOKEN is not set.")
+        raise Exception("GITHUB_TOKEN is not set.")
+    
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    # Get the SHA of the file if it exists (to update)
     try:
-        # Describe the current task definition
-        response = ecs_client.describe_task_definition(taskDefinition=TASK_DEFINITION)
-        task_def = response['taskDefinition']
-
-        # Update the image in the container definitions
-        updated_container_definitions = []
-        for container in task_def['containerDefinitions']:
-            if container['name'] == 'do-bot':  # Replace with your container name
-                container['image'] = image_uri
-                logger.info(f"Updated container '{container['name']}' image to '{image_uri}'.")
-            updated_container_definitions.append(container)
-
-        # Register the new task definition
-        new_task_def = ecs_client.register_task_definition(
-            family=task_def['family'],
-            taskRoleArn=task_def['taskRoleArn'],
-            executionRoleArn=task_def['executionRoleArn'],
-            networkMode=task_def['networkMode'],
-            containerDefinitions=updated_container_definitions,
-            requiresCompatibilities=task_def['requiresCompatibilities'],
-            cpu=task_def['cpu'],
-            memory=task_def['memory']
-        )
-
-        # Update the ECS service to use the new task definition
-        ecs_client.update_service(
-            cluster=ECS_CLUSTER,
-            service=ECS_SERVICE,
-            taskDefinition=new_task_def['taskDefinition']['taskDefinitionArn'],
-            forceNewDeployment=True
-        )
-
-        logger.info(f"ECS service '{ECS_SERVICE}' updated to use image '{image_uri}'.")
+        response = requests.get(GITHUB_API_URL, headers=headers, params={"ref": branch_name})
+        if response.status_code == 200:
+            file_sha = response.json()['sha']
+            logger.info(f"File '{file_path}' exists in branch '{branch_name}' with SHA {file_sha}.")
+        elif response.status_code == 404:
+            file_sha = None
+            logger.info(f"File '{file_path}' does not exist in branch '{branch_name}'. It will be created.")
+        else:
+            response.raise_for_status()
     except Exception as e:
-        logger.error(f"Failed to update ECS service: {e}")
+        logger.error(f"Failed to fetch file '{file_path}' from branch '{branch_name}': {e}")
+        raise
+    
+    # Prepare the commit data
+    import base64
+    encoded_content = base64.b64encode(content.encode()).decode()
+    
+    data = {
+        "message": commit_message,
+        "content": encoded_content,
+        "branch": branch_name
+    }
+    if file_sha:
+        data["sha"] = file_sha
+    
+    # Commit the file
+    try:
+        response = requests.put(GITHUB_API_URL, headers=headers, json=data)
+        response.raise_for_status()
+        logger.info(f"Committed file '{file_path}' to branch '{branch_name}'.")
+    except Exception as e:
+        logger.error(f"Failed to commit file '{file_path}' to branch '{branch_name}': {e}")
+        raise
+
+def merge_upgrade_branch(branch_name: str):
+    """
+    Merges the specified upgrade branch into the main branch.
+    
+    Args:
+        branch_name (str): The GitHub branch name to merge.
+    
+    Raises:
+        Exception: If the merge fails.
+    """
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/merges"
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    
+    if not GITHUB_TOKEN:
+        logger.error("GITHUB_TOKEN is not set.")
+        raise Exception("GITHUB_TOKEN is not set.")
+    
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    data = {
+        "base": "main",
+        "head": branch_name,
+        "commit_message": f"Merging upgrade branch '{branch_name}' into main"
+    }
+    
+    try:
+        response = requests.post(GITHUB_API_URL, headers=headers, json=data)
+        response.raise_for_status()
+        logger.info(f"Successfully merged branch '{branch_name}' into main.")
+    except Exception as e:
+        logger.error(f"Failed to merge branch '{branch_name}' into main: {e}")
+        raise
+
+def delete_upgrade_branch(branch_name: str):
+    """
+    Deletes the specified upgrade branch in GitHub.
+    
+    Args:
+        branch_name (str): The GitHub branch name to delete.
+    
+    Raises:
+        Exception: If the deletion fails.
+    """
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/git/refs/heads/{branch_name}"
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    
+    if not GITHUB_TOKEN:
+        logger.error("GITHUB_TOKEN is not set.")
+        raise Exception("GITHUB_TOKEN is not set.")
+    
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    try:
+        response = requests.delete(GITHUB_API_URL, headers=headers)
+        if response.status_code in [204, 404]:
+            logger.info(f"Deleted branch '{branch_name}' from GitHub.")
+        else:
+            response.raise_for_status()
+    except Exception as e:
+        logger.error(f"Failed to delete branch '{branch_name}' from GitHub: {e}")
+        raise
+
+def get_last_deployment_tag() -> str:
+    """
+    Retrieves the last deployment tag from GitHub.
+    
+    Returns:
+        str: The last deployment tag.
+    
+    Raises:
+        Exception: If unable to fetch tags or no tags are found.
+    """
+    GITHUB_API_URL = f"https://api.github.com/repos/{os.environ.get('GITHUB_OWNER')}/{os.environ.get('GITHUB_REPO')}/tags"
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    
+    if not GITHUB_TOKEN:
+        logger.error("GITHUB_TOKEN is not set.")
+        raise Exception("GITHUB_TOKEN is not set.")
+    
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    try:
+        response = requests.get(GITHUB_API_URL, headers=headers)
+        response.raise_for_status()
+        tags = response.json()
+        if not tags:
+            raise Exception("No tags found in the repository.")
+        last_tag = tags[0]['name']  # Assuming the first tag is the latest
+        logger.info(f"Last deployment tag retrieved: '{last_tag}'.")
+        return last_tag
+    except Exception as e:
+        logger.error(f"Failed to retrieve last deployment tag: {e}")
         raise
