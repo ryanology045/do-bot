@@ -37,7 +37,7 @@ jobs:
 
       # Uncomment and configure the following steps if you wish to deploy to ECS
       - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy@v1
+        uses: aws-actions/amazon-ecs-deploy@v1.12.0
         with:
           task-definition: "do-bot"
           service: "do-bot"
