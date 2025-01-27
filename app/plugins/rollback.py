@@ -133,12 +133,12 @@ def get_last_deployment_tag() -> str:
     import requests
 
     GITHUB_API_URL = "https://api.github.com/repos/{owner}/{repo}/tags"
-    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
-    OWNER = os.environ.get("GITHUB_OWNER")  # e.g., "your-username"
-    REPO = os.environ.get("GITHUB_REPO")    # e.g., "your-repo"
+    GITHUB_TOKEN = os.environ.get("GH_TOKEN")
+    OWNER = os.environ.get("GH_OWNER")  # e.g., "your-username"
+    REPO = os.environ.get("GH_REPO")    # e.g., "your-repo"
 
     if not GITHUB_TOKEN or not OWNER or not REPO:
-        raise Exception("GITHUB_TOKEN, GITHUB_OWNER, and GITHUB_REPO must be set as environment variables.")
+        raise Exception("GH_TOKEN, GH_OWNER, and GH_REPO must be set as environment variables.")
 
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
