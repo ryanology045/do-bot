@@ -25,7 +25,7 @@ def register(app: App):
     logger.setLevel(logging.INFO)
     
     # Regex to parse commands: "/[modelType] /[instanceID] [prompt]"
-    COMMAND_REGEX = re.compile(r"^\s*[/]?(?P<model>[\w-]+)?\s*[/]?(?P<instance>[\w-]+)?\s*(?P<prompt>.+)$", re.DOTALL)
+    COMMAND_REGEX = re.compile(r"^\s*(?:/(?P<model>[\w-]+))?\s*(?:/(?P<instance>[\w-]+))?\s*(?P<prompt>.+)$", re.DOTALL)
     
     @app.event("app_mention")
     def handle_app_mention_events(event, say, logger):
