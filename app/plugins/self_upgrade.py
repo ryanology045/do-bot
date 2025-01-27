@@ -1,8 +1,8 @@
 # plugins/self_upgrade.py
-"""
-Plugin implementing the self-upgrade flow for new features, requiring admin approvals.
-Uses GPT (OpenAI) to transform user requests, commit to GitHub, etc.
-"""
+#"""
+#Plugin implementing the self-upgrade flow for new features, requiring admin approvals.
+#Uses GPT (OpenAI) to transform user requests, commit to GitHub, etc.
+#"""
 
 import re
 from slack_bolt import App
