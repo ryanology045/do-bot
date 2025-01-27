@@ -1,0 +1,5 @@
+slack_bolt==1.17.0
+slack_sdk==3.19.0
+openai==0.27.2
+PyGithub==1.58.2
+apscheduler==3.9.1
