@@ -8,8 +8,10 @@ import re
 import logging
 from slack_bolt import App
 from slack_bolt.adapter.flask import SlackRequestHandler
-from services.openai_service import ChatGPTSessionManager
 from plugins.rate_limiting import rate_limit_check
+
+# IMPORTANT: import the helper function, not the class
+from services.openai_service import generate_response
 
 def register(app: App):
     """
@@ -74,7 +76,7 @@ def register(app: App):
         
         # Process GPT request (queued by instance_id)
         try:
-            reply = ChatGPTSessionManager.generate_response(model, instance_id, prompt)
+            reply = generate_response(model, instance_id, prompt)
         except Exception as e:
             logger.error(f"Error processing GPT request: {e}")
             say("Sorry, something went wrong while processing your request.")
