@@ -36,11 +36,11 @@ jobs:
 
 
       # Uncomment and configure the following steps if you wish to deploy to ECS
-      # - name: Deploy to ECS
-      #   uses: aws-actions/amazon-ecs-deploy@v1
-      #   with:
-      #     task-definition: "<YOUR_ECS_TASK_DEFINITION_NAME>"
-      #     service: "<YOUR_ECS_SERVICE_NAME>"
-      #     cluster: "<YOUR_ECS_CLUSTER_NAME>"
-      #     wait-for-service-stability: true
-      #     force-new-deployment: true
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy@v1
+        with:
+          task-definition: "<YOUR_ECS_TASK_DEFINITION_NAME>"
+          service: "<YOUR_ECS_SERVICE_NAME>"
+          cluster: "<YOUR_ECS_CLUSTER_NAME>"
+          wait-for-service-stability: true
+          force-new-deployment: true
