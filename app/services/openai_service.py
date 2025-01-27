@@ -98,3 +98,97 @@ def openai_rewrite(user_text):
         return response.choices[0].message["content"]
     except Exception as e:
         return f"Rewrite error: {str(e)}"
+
+# services/openai_service.py
+
+# [All your existing imports and code above remain unchanged]
+# ...
+# existing code: AVAILABLE_MODELS, _instance_queues, _queue_locks, etc.
+
+class ChatGPTSessionManager:
+    """
+    A session manager that keeps track of conversations per (model, instance_id) and
+    uses the existing queue-based approach for sequential ChatCompletion requests.
+    """
+    def __init__(self):
+        """
+        Initialize the ChatGPTSessionManager with an internal dictionary to store
+        conversation history per (model, instance_id).
+        """
+        # Key: (model, instance_id), Value: list of chat messages (dicts with 'role', 'content')
+        self._conversations = {}
+
+    def _init_conversation(self, model: str, instance_id: str):
+        """
+        Create a new conversation list for (model, instance_id) if it doesn't exist yet.
+        """
+        key = (model, instance_id)
+        if key not in self._conversations:
+            self._conversations[key] = []
+
+    def add_user_message(self, model: str, instance_id: str, user_text: str):
+        """
+        Add the user's message to the conversation history.
+        """
+        self._init_conversation(model, instance_id)
+        self._conversations[(model, instance_id)].append({"role": "user", "content": user_text})
+
+    def add_assistant_message(self, model: str, instance_id: str, assistant_text: str):
+        """
+        Add the assistant's (OpenAI's) message to the conversation history.
+        """
+        self._init_conversation(model, instance_id)
+        self._conversations[(model, instance_id)].append({"role": "assistant", "content": assistant_text})
+
+    def get_conversation(self, model: str, instance_id: str):
+        """
+        Retrieve the entire conversation list for (model, instance_id).
+        Returns an empty list if none exists yet.
+        """
+        return self._conversations.get((model, instance_id), [])
+
+    def generate_response(self, model: str, instance_id: str, user_text: str) -> str:
+        """
+        Adds the user's message to the conversation, then calls OpenAI's ChatCompletion,
+        updates the conversation with the assistant reply, and returns the assistant's response.
+        Uses the same queue-based approach as process_request for concurrency.
+        """
+        # 1. Check if model is available
+        if model not in AVAILABLE_MODELS:
+            return f"Model '{model}' is not available. Please add it or choose another."
+
+        # 2. Initialize or retrieve the conversation
+        self._init_conversation(model, instance_id)
+
+        # 3. Add the user message to conversation
+        self.add_user_message(model, instance_id, user_text)
+
+        # 4. We'll define a small worker that calls the existing `_chat_completion`,
+        #    but we pass in the entire conversation as the "messages" parameter.
+        def worker():
+            conversation_messages = self.get_conversation(model, instance_id)
+            # Example usage with the existing openai.ChatCompletion:
+            response = openai.ChatCompletion.create(
+                model=model,
+                messages=conversation_messages,
+                temperature=0.7
+            )
+            reply = response.choices[0].message["content"]
+            # Add the assistant's reply to the conversation
+            self.add_assistant_message(model, instance_id, reply)
+            return reply
+
+        # 5. Use the same queue logic as process_request
+        q = _get_queue(model, instance_id)
+        result_container = []
+
+        def job():
+            result_container.append(worker())
+
+        q.put(job)
+        job_to_run = q.get()
+        job_to_run()
+        q.task_done()
+
+        # 6. Return the assistant's generated reply
+        return result_container[0]
