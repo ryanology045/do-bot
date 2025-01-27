@@ -241,3 +241,131 @@ def get_last_deployment_tag() -> str:
     except Exception as e:
         logger.error(f"Failed to retrieve last deployment tag: {e}")
         raise
+
+def rollback_to_tag(tag: str):
+    """
+    Performs a rollback to the specified GitHub tag (e.g., 'production-deployment-20250127-0000').
+
+    1) Fetch release data for `tag` from GitHub.
+    2) Extract the Docker image URI from the release body (assuming 'Image URI: <image>'.
+    3) Update the ECS task definition to use that image, forcing a new deployment.
+
+    Args:
+        tag (str): The tag identifying the deployment version to roll back to.
+
+    Raises:
+        Exception: If the rollback process fails or the tag doesn't exist.
+    """
+    logger.info(f"Attempting to roll back to tag '{tag}'...")
+
+    # 1) Fetch release info from GitHub
+    github_token = os.environ.get("GITHUB_TOKEN")
+    github_owner = os.environ.get("GITHUB_OWNER")  # e.g. "YourName"
+    github_repo  = os.environ.get("GITHUB_REPO")   # e.g. "YourRepo"
+
+    if not all([github_token, github_owner, github_repo]):
+        msg = "GITHUB_TOKEN, GITHUB_OWNER, or GITHUB_REPO not set in env."
+        logger.error(msg)
+        raise Exception(msg)
+
+    headers = {
+        "Authorization": f"token {github_token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    releases_url = f"https://api.github.com/repos/{github_owner}/{github_repo}/releases/tags/{tag}"
+    logger.info(f"Fetching release info from {releases_url}")
+    resp = requests.get(releases_url, headers=headers)
+    if resp.status_code != 200:
+        msg = f"Failed to fetch release for tag '{tag}': {resp.status_code} {resp.text}"
+        logger.error(msg)
+        raise Exception(msg)
+
+    release_data = resp.json()
+    # 2) Extract Docker image URI from release body
+    image_uri = _extract_image_uri_from_release(release_data.get("body", ""), tag)
+    logger.info(f"Found image URI for rollback: {image_uri}")
+
+    # 3) Update ECS to use that image
+    _update_ecs_service(image_uri)
+    logger.info(f"Rollback to tag '{tag}' completed successfully using image '{image_uri}'.")
+
+def _extract_image_uri_from_release(body: str, tag: str) -> str:
+    """
+    Extract the Docker image URI from the release body, assuming it has a line like 'Image URI: <image>'.
+    """
+    # Example line: "Image URI: 123456789012.dkr.ecr.us-east-1.amazonaws.com/your-app:someTag"
+    logger.info(f"Extracting image URI from release body for tag {tag}.")
+    pattern = r"Image URI:\s*(\S+)"
+    match = re.search(pattern, body)
+    if not match:
+        msg = f"No 'Image URI:' line found in release body for tag '{tag}'."
+        logger.error(msg)
+        raise Exception(msg)
+    return match.group(1)
+
+def _update_ecs_service(image_uri: str):
+    """
+    Updates an ECS service to use the specified Docker image URI.
+    - Expects AWS creds + ECS info in environment:
+      ECS_CLUSTER, ECS_SERVICE, ECS_TASK_DEFINITION, AWS_DEFAULT_REGION, etc.
+    """
+    ecs_cluster = os.environ.get("ECS_CLUSTER")        # e.g. "my-ecs-cluster"
+    ecs_service = os.environ.get("ECS_SERVICE")        # e.g. "my-ecs-service"
+    ecs_taskdef = os.environ.get("ECS_TASK_DEFINITION")# e.g. "my-ecs-task-def-family"
+    region      = os.environ.get("AWS_DEFAULT_REGION","us-east-1")
+
+    if not all([ecs_cluster, ecs_service, ecs_taskdef]):
+        msg = "ECS_CLUSTER, ECS_SERVICE, or ECS_TASK_DEFINITION not set in env. Cannot update ECS."
+        logger.error(msg)
+        raise Exception(msg)
+
+    ecs_client = boto3.client("ecs", region_name=region)
+
+    # 1) Describe the current task definition
+    logger.info(f"Describing current task definition: {ecs_taskdef}")
+    resp = ecs_client.describe_task_definition(taskDefinition=ecs_taskdef)
+    if "taskDefinition" not in resp:
+        raise Exception(f"Task definition '{ecs_taskdef}' not found or invalid response.")
+
+    task_def = resp["taskDefinition"]
+    container_defs = task_def["containerDefinitions"]
+
+    # 2) Update the container image
+    #    - If your container is named 'do-bot', update that container
+    container_name = "do-bot"  # Adjust to your container name
+    updated = False
+    for cdef in container_defs:
+        if cdef["name"] == container_name:
+            logger.info(f"Updating container '{container_name}' image to '{image_uri}'")
+            cdef["image"] = image_uri
+            updated = True
+            break
+
+    if not updated:
+        raise Exception(f"No container named '{container_name}' found in task definition.")
+
+    # 3) Register a new task definition revision with the updated container
+    new_task_def = ecs_client.register_task_definition(
+        family=task_def["family"],
+        taskRoleArn=task_def["taskRoleArn"],
+        executionRoleArn=task_def["executionRoleArn"],
+        networkMode=task_def["networkMode"],
+        containerDefinitions=container_defs,
+        requiresCompatibilities=task_def["requiresCompatibilities"],
+        cpu=task_def["cpu"],
+        memory=task_def["memory"]
+    )
+
+    new_td_arn = new_task_def["taskDefinition"]["taskDefinitionArn"]
+    logger.info(f"Registered new task definition revision: {new_td_arn}")
+
+    # 4) Update the ECS service to use that new revision
+    logger.info(f"Updating service '{ecs_service}' in cluster '{ecs_cluster}' to use task def {new_td_arn}")
+    ecs_client.update_service(
+        cluster=ecs_cluster,
+        service=ecs_service,
+        taskDefinition=new_td_arn,
+        forceNewDeployment=True
+    )
+    logger.info(f"ECS service '{ecs_service}' updated to new task definition. Rollback triggered.")
