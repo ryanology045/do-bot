@@ -1,29 +1,11 @@
 # plugins/plugin_manager.py
-"""
-Plugin Manager for dynamically loading and registering Slackbot plugins.
-"""
 
 import importlib
 import pkgutil
 import logging
 from slack_bolt import App
 
-# Configure logger for the Plugin Manager
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create a console handler with a higher log level
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-
-# Create a formatter and set it for the handler
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-
-# Add the handler to the logger if it doesn't already have handlers
-if not logger.hasHandlers():
-    logger.addHandler(console_handler)
-
 
 def load_plugins(app: App, plugins_package: str = "plugins"):
     """
@@ -32,10 +14,6 @@ def load_plugins(app: App, plugins_package: str = "plugins"):
     Args:
         app (App): The Slack Bolt App instance to register event listeners with.
         plugins_package (str): The Python package where plugins are located.
-
-    Raises:
-        ImportError: If a plugin cannot be imported.
-        AttributeError: If a plugin does not have a 'register' function.
     """
     try:
         # Import the plugins package
