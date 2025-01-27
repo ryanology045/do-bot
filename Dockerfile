@@ -22,8 +22,8 @@ WORKDIR /app
 # Copy requirements
 COPY requirements.txt /app/
 
-# Install Python dependencies with retry mechanism
-RUN pip install --no-cache-dir -r requirements.txt --retries 5 --timeout 30
+# Install Python dependencies with retry mechanism and explicit PyPI index
+RUN pip install --no-cache-dir -r requirements.txt --retries 5 --timeout 30 --index-url https://pypi.org/simple -v
 
 # Copy the rest of the application code
 COPY . /app/
