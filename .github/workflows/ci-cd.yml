@@ -36,21 +36,35 @@ jobs:
 
 
       # Uncomment and configure the following steps if you wish to deploy to ECS
-      # Step 7: Render Task Definition with Updated Image
-      - name: Render Task Definition
-        id: render-task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ecs-task-def.json  # Path to your task definition template
-          container-name: "do-bot"             # Name of the container in the task definition
-          image: ${{ secrets.AWS_ECR_REGISTRY }}/do-bot:latest
+      # Step 7: Replace Placeholders in Task Definition
+#      - name: Replace Placeholders in Task Definition
+#        run: |
+#          # Export secrets as environment variables
+#          export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+#          export ADMIN_USER_IDS=${{ secrets.ADMIN_USER_IDS }}
+#          export GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+#          export SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
+#          export SLACK_SIGNING_SECRET=${{ secrets.SLACK_SIGNING_SECRET }}
+#          export IMAGE=${{ secrets.AWS_ECR_REGISTRY }}/do-bot:latest
 
-      # Step 8: Deploy to ECS
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-          service: "do-bot"            # Replace with your ECS service name
-          cluster: "do-bot"            # Replace with your ECS cluster name
-          wait-for-service-stability: true
-          force-new-deployment: true
+      # Replace placeholders in ecs-task-def.json and save as ecs-task-def-updated.json
+#          envsubst < ecs-task-def.json > ecs-task-def-updated.json
+      
+      # Step 8: Render Task Definition with Updated Image
+#      - name: Render Task Definition
+#        id: render-task-def
+#        uses: aws-actions/amazon-ecs-render-task-definition@v1
+#         with:
+#          task-definition: ecs-task-def-updated.json
+#          container-name: "do-bot"             # Name of the container in the task definition
+#          image: ${{ secrets.AWS_ECR_REGISTRY }}/do-bot:latest
+
+      # Step 9: Deploy to ECS
+#      - name: Deploy to ECS
+#        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+#        with:
+#          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+#          service: "do-bot"            # Replace with your ECS service name
+#          cluster: "do-bot"            # Replace with your ECS cluster name
+#          wait-for-service-stability: true
+#          force-new-deployment: true
