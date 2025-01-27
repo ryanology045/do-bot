@@ -39,12 +39,25 @@ jobs:
       - name: Replace Placeholders in Task Definition
         run: |
           # Export secrets as environment variables
-          export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          export ADMIN_USER_IDS=${{ secrets.ADMIN_USER_IDS }}
-          export GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
-          export SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
+          export ECS_SERVICE=${{ secrets.ECS_SERVICE }}
+          export PORT=${{ secrets.PORT }}
+          export GH_OWNER=${{ secrets.GH_OWNER }}
+          export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          export AWS_DEFAULT_REGION=${{ secrets.AWS_DEFAULT_REGION }}
+          export GH_REPO_NAME=${{ secrets.GH_REPO_NAME }}
+          export GH_TOKEN=${{ secrets.GH_TOKEN }}
+          export ECS_CLUSTER=${{ secrets.ECS_CLUSTER }}
           export SLACK_SIGNING_SECRET=${{ secrets.SLACK_SIGNING_SECRET }}
+          export ADMIN_USER_IDS=${{ secrets.ADMIN_USER_IDS }}
+          export GH_REPO=${{ secrets.GH_REPO }}
+          export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          export ECR_REPO_URI=${{ secrets.ECR_REPO_URI }}
+          export ECS_TASK_DEFINITION=${{ secrets.ECS_TASK_DEFINITION }}
+          export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          export SLACK_APP_TOKEN=${{ secrets.SLACK_APP_TOKEN }}
+          export SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
           export IMAGE=${{ secrets.AWS_ECR_REGISTRY }}/do-bot:latest
+
           envsubst < ecs-task-def.json > ecs-task-def-updated.json
       
       - name: Render Task Definition
