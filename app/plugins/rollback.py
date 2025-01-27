@@ -1,7 +1,7 @@
 # plugins/rollback.py
-"""
-Plugin for rolling back the bot to a previous deployment using GitHub tags.
-"""
+#"""
+#Plugin for rolling back the bot to a previous deployment using GitHub tags.
+#"""
 
 import os
 from slack_bolt import App
