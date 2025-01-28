@@ -94,8 +94,8 @@
           "max-buffer-size": "25m",
           "awslogs-region": "us-east-2",
           "awslogs-stream-prefix": "ecs"
-        },
-      },
+        }
+      }
     }
   ],
   "requiresAttributes": [
