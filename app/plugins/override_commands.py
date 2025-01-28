@@ -1,4 +1,5 @@
 # plugins/override_commands.py
+import os
 import logging
 from slack_bolt import App
 import services.openai_service as openai_service
