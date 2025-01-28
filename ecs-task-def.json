@@ -84,7 +84,7 @@
           "name": "SLACK_BOT_TOKEN",
           "value": "${SLACK_BOT_TOKEN}"
         }
-      ]
+      ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
