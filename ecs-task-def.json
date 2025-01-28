@@ -1,5 +1,6 @@
 {
   "family": "do-bot-task-def",
+  "executionRoleArn": "arn:aws:iam::248189924595:role/ecsTaskExecutionRole",
   "networkMode": "awsvpc",
   "containerDefinitions": [
     {
