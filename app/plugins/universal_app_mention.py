@@ -10,7 +10,7 @@ from plugins.rate_limiting import rate_limit_check
 from services.openai_service import (
     AVAILABLE_MODELS,
     DEFAULT_MODEL,
-    logger as openai_logger
+#    logger as openai_logger
 )
 from services.github_service import rollback_to_tag, get_last_deployment_tag
 
