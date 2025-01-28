@@ -85,6 +85,46 @@
           "value": "${SLACK_BOT_TOKEN}"
         }
       ]
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/do-bot",
+          "mode": "non-blocking",
+          "awslogs-create-group": "true",
+          "max-buffer-size": "25m",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        },
+      },
+    }
+  ],
+  "requiresAttributes": [
+    {
+      "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+    },
+    {
+      "name": "ecs.capability.execution-role-awslogs"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.ecr-auth"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.28"
+    },
+    {
+      "name": "ecs.capability.execution-role-ecr-pull"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+    },
+    {
+      "name": "ecs.capability.task-eni"
+    },
+    {
+      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.29"
     }
   ],
   "requiresCompatibilities": [
