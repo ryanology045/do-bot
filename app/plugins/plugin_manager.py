@@ -5,7 +5,9 @@ import pkgutil
 import logging
 from slack_bolt import App
 
+# Configure the logger for plugin_manager
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 def load_plugins(app: App, plugins_package: str = "plugins"):
     """
@@ -28,7 +30,7 @@ def load_plugins(app: App, plugins_package: str = "plugins"):
             logger.debug(f"Skipping sub-package '{module_name}' in '{plugins_package}'.")
             continue  # Skip sub-packages if any
 
-        # Skip 'plugin_manager' itself
+        # Skip 'plugin_manager' itself to avoid recursive import
         if module_name == "plugin_manager":
             logger.debug("Skipping plugin_manager to avoid load conflict.")
             continue
