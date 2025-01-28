@@ -1,5 +1,5 @@
 {
-  "family": "do-bot-task-def",
+  "family": "do-bot",
   "executionRoleArn": "arn:aws:iam::248189924595:role/ecsTaskExecutionRole",
   "networkMode": "awsvpc",
   "containerDefinitions": [
@@ -97,35 +97,6 @@
           "awslogs-stream-prefix": "ecs"
         }
       }
-    }
-  ],
-  "requiresAttributes": [
-    {
-      "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
-    },
-    {
-      "name": "ecs.capability.execution-role-awslogs"
-    },
-    {
-      "name": "com.amazonaws.ecs.capability.ecr-auth"
-    },
-    {
-      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
-    },
-    {
-      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.28"
-    },
-    {
-      "name": "ecs.capability.execution-role-ecr-pull"
-    },
-    {
-      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
-    },
-    {
-      "name": "ecs.capability.task-eni"
-    },
-    {
-      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.29"
     }
   ],
   "requiresCompatibilities": [
