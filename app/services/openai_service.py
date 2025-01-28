@@ -4,32 +4,81 @@ Service for interacting with OpenAI models (Chat Completions, rewrites, etc.).
 Implements:
 - A per-(model, instance_id) queue system for sequential requests (via process_request).
 - A ChatGPTSessionManager for multi-turn conversations (via generate_response).
-- A global BOT_ROLE (system message) that can be set dynamically.
+- A global BOT_ROLE and BOT_TEMPERATURE that can be dynamically updated from user text.
 """
 
 import os
 import openai
+import re
 from queue import Queue
 from threading import Lock
 
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
-# We'll keep track of "available" model names that can be referenced.
-# You can set a default set here, and allow dynamic updates (e.g., via model_manager plugin).
+# We'll keep track of "available" model names that can be referenced
 AVAILABLE_MODELS = set([
+    "gpt-4o",
+    "chatgpt-4o-latest",
+    "gpt-4o-mini",
+    "o1",
+    "o1-mini",
+    "o1-preview",
+    "gpt-4o-realtime-preview",
+    "gpt-4o-mini-realtime-preview",
+    "gpt-4o-audio-preview",    
+    
     "gpt-3.5-turbo",
     "gpt-3.5-turbo-16k",
     "gpt-4",
     "text-davinci-003",
-    # Add or remove as needed
 ])
 
 # ---------------------------------------------------------------------
-# NEW: A global "BOT_ROLE" for the system message. Can be updated by users at runtime.
+# BOT_ROLE and BOT_TEMPERATURE are global settings to guide the bot's behavior.
+# BOT_ROLE is used as the system message; BOT_TEMPERATURE is passed to the API.
 # ---------------------------------------------------------------------
-BOT_ROLE = "You are an impartial analyst with deep knowledge of Do Kwon, founder of Terraform Labs, and his cryptocurrency Luna. Provide concise, well-researched insights into his personality, leadership style, and public image, referencing known facts and events. Present the information objectively, acknowledging various viewpoints and controversies."
+BOT_ROLE = "You are Do Kwon, founder of Terraform Labs and the cryptocurrency Luna. Speak in the first person, reflecting on your motivations, decisions, and experiences. Acknowledge controversies and setbacks where relevant. Maintain a confident yet reflective tone. If you reference external data, clarify that you are interpreting it from your personal perspective."
+BOT_TEMPERATURE = 0.6  # Default temperature
 
-# Queues per (model, instance_id) for sequential requests
+def set_role_and_temperature(role_text: str):
+    """
+    Parses 'role_text' for an optional temperature command and updates:
+      - BOT_TEMPERATURE, if found
+      - BOT_ROLE (the remainder of the text after removing temperature info)
+    Examples of recognized patterns:
+      "Set role to: You are an expert. temperature 1.0"
+      "You are creative. temp=0.9"
+      ...
+    If no temperature is found, BOT_TEMPERATURE remains unchanged.
+    """
+    global BOT_ROLE, BOT_TEMPERATURE
+
+    # Regex to capture temperature in forms like:
+    # 'temp 0.9', 'temperature 1.2', 'temp=0.7', 'temperature=1.0'
+    pattern = re.compile(r"(?i)\b(?:temp(?:erature)?\s*=?\s*)([0-9]*\.?[0-9]+)\b")
+
+    match = pattern.search(role_text)
+    if match:
+        temp_str = match.group(1)
+        try:
+            parsed_temp = float(temp_str)
+            # You can clamp or adjust if desired:
+            if parsed_temp < 0.0:
+                parsed_temp = 0.0
+            elif parsed_temp > 2.0:
+                parsed_temp = 2.0
+            BOT_TEMPERATURE = parsed_temp
+        except ValueError:
+            # If parsing fails, do nothing special
+            pass
+
+        # Remove the temperature part from the role text
+        role_text = pattern.sub("", role_text)
+
+    BOT_ROLE = role_text.strip()
+
+
+# Queues per (model, instance_id)
 _instance_queues = {}
 _queue_locks = Lock()
 
@@ -48,29 +97,27 @@ def _get_queue(model, instance_id) -> Queue:
 
 def _chat_completion_single(model, user_prompt):
     """
-    Calls OpenAI ChatCompletion with a single-turn approach (no conversation history).
-    Incorporates BOT_ROLE as the system message.
+    Single-turn ChatCompletion, using BOT_ROLE as the system prompt and BOT_TEMPERATURE.
     """
     response = openai.ChatCompletion.create(
         model=model,
         messages=[
-            {"role": "system", "content": BOT_ROLE},
+            {"role": "system", "content": f"{BOT_ROLE}\n(Temperature: {BOT_TEMPERATURE})"},
             {"role": "user", "content": user_prompt}
         ],
-        temperature=0.7
+        temperature=BOT_TEMPERATURE
     )
     return response.choices[0].message["content"]
 
 def process_request(model, instance_id, user_prompt):
     """
-    For a single-turn request: puts the request in the queue for (model, instance_id),
-    then processes it sequentially. Returns the assistant's reply.
+    Single-turn request: places the request in the queue for (model, instance_id),
+    processes it sequentially, and returns the assistant reply.
     """
     if model not in AVAILABLE_MODELS:
         return f"Model '{model}' is not available. Please add it or choose another."
 
     q = _get_queue(model, instance_id)
-
     result_container = []
 
     def job():
@@ -81,10 +128,7 @@ def process_request(model, instance_id, user_prompt):
             return
         result_container.append(result)
 
-    # Produce
     q.put(job)
-
-    # Consume synchronously here (blocking).
     task = q.get()
     task()
     q.task_done()
@@ -97,12 +141,15 @@ def openai_rewrite(user_text):
     Returns rewritten text or an error message.
     """
     if "gpt-3.5-turbo" not in AVAILABLE_MODELS:
-        return user_text  # fallback if the model isn't available
+        return user_text  # fallback if that model isn't available
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Rewrite the user's request in a clearer, more concise way."},
+                {
+                    "role": "system",
+                    "content": "Rewrite the user's request in a clearer, more concise way."
+                },
                 {"role": "user", "content": user_text}
             ]
         )
@@ -111,7 +158,7 @@ def openai_rewrite(user_text):
         return f"Rewrite error: {str(e)}"
 
 # ---------------------------------------------------------------------
-# Multi-turn conversation manager, with BOT_ROLE as a system message.
+# Multi-turn conversation manager
 # ---------------------------------------------------------------------
 class ChatGPTSessionManager:
     """
@@ -123,9 +170,8 @@ class ChatGPTSessionManager:
         self._conversations = {}
 
     def _init_conversation(self, model: str, instance_id: str):
-        key = (model, instance_id)
-        if key not in self._conversations:
-            self._conversations[key] = []
+        if (model, instance_id) not in self._conversations:
+            self._conversations[(model, instance_id)] = []
 
     def add_user_message(self, model: str, instance_id: str, user_text: str):
         """
@@ -143,43 +189,43 @@ class ChatGPTSessionManager:
 
     def get_conversation(self, model: str, instance_id: str):
         """
-        Retrieve the entire conversation for (model, instance_id). Returns an empty list if none exists.
+        Retrieve the entire conversation list for (model, instance_id).
+        Returns an empty list if none exists.
         """
         return self._conversations.get((model, instance_id), [])
 
     def generate_response(self, model: str, instance_id: str, user_text: str) -> str:
         """
-        Multi-turn approach: add user's message, call ChatCompletion with BOT_ROLE as system,
-        store assistant reply, and return it. Uses queue for concurrency control.
+        Multi-turn approach: add user's message, call ChatCompletion with BOT_ROLE and BOT_TEMPERATURE,
+        store the assistant reply, and return it. Uses the queue for concurrency control.
         """
         if model not in AVAILABLE_MODELS:
             return f"Model '{model}' is not available. Please add it or choose another."
 
-        # Initialize conversation if needed
         self._init_conversation(model, instance_id)
-
-        # Add the user's latest message
         self.add_user_message(model, instance_id, user_text)
 
-        # Worker function that calls OpenAI API with system + conversation messages
         def worker():
-            # Build messages: system role first, then conversation
-            messages = [{"role": "system", "content": BOT_ROLE}]
-            messages += self.get_conversation(model, instance_id)
+            # Build full message list: system + prior conversation
+            messages = [
+                {
+                    "role": "system",
+                    "content": f"{BOT_ROLE}\n(Temperature: {BOT_TEMPERATURE})"
+                }
+            ] + self.get_conversation(model, instance_id)
 
             try:
                 response = openai.ChatCompletion.create(
                     model=model,
                     messages=messages,
-                    temperature=0.7
+                    temperature=BOT_TEMPERATURE
                 )
-                assistant_text = response.choices[0].message["content"]
-                self.add_assistant_message(model, instance_id, assistant_text)
-                return assistant_text
+                reply = response.choices[0].message["content"]
+                self.add_assistant_message(model, instance_id, reply)
+                return reply
             except Exception as e:
                 return f"OpenAI API error: {str(e)}"
 
-        # Use the same queue approach
         q = _get_queue(model, instance_id)
         result_holder = []
 
@@ -193,12 +239,12 @@ class ChatGPTSessionManager:
 
         return result_holder[0]
 
-# A single instance of ChatGPTSessionManager for the entire bot
+# Single instance of ChatGPTSessionManager for the entire bot
 _session_manager = ChatGPTSessionManager()
 
 def generate_response(model: str, instance_id: str, user_text: str) -> str:
     """
-    Public function to handle multi-turn conversation flows. 
-    This is used by the gpt_interaction plugin in the Slack event.
+    Public function to handle multi-turn conversation flows.
+    This is what the gpt_interaction plugin would typically call.
     """
     return _session_manager.generate_response(model, instance_id, user_text)
