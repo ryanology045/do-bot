@@ -5,6 +5,7 @@ import json
 import logging
 import openai
 from slack_bolt import App
+import services.openai_service as openai_service
 
 from plugins.rate_limiting import rate_limit_check
 from services.openai_service import (
