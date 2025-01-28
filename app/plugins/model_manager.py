@@ -17,7 +17,8 @@ def register(app: App):
     This plugin only handles commands like:
       - "@BotName add model <model_name>"
       - "@BotName remove model <model_name>"
-    If the event doesn't match, we call next() to let other handlers handle it.
+    If the text doesn't match, we simply 'return' without responding
+    and do not produce an error or fallback message.
     """
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
@@ -33,39 +34,40 @@ def register(app: App):
     COMMAND_REGEX = re.compile(r"^(add|remove)\s+model\s+(?P<model>[\w-]+)$", re.IGNORECASE)
     
     @app.event("app_mention")
-    def handle_model_commands(event, say, context, next):
+    def handle_model_commands(event, say, logger):
         """
         Handle 'app_mention' events from Slack. 
-        Only processes commands to add or remove GPT models; 
-        otherwise, it calls next() so other plugins can handle.
+        Only processes commands to add or remove GPT models.
         
         Expected commands:
             - "@BotName add model gpt-4"
             - "@BotName remove model gpt-3.5-turbo"
+        
+        If the text doesn't match this pattern, we do nothing (return),
+        allowing other handlers to process the event if they wish.
         """
         user_id = event.get("user")
         text = event.get("text", "")
         
         if not user_id or not text:
             logger.warning("Received app_mention event without user_id or text.")
-            return next()  # Let other handlers see this event
+            return  # Do nothing, no errors
         
         # Remove all bot mentions from the text
         mention_pattern = re.compile(r"<@[\w]+>")
         stripped_text = mention_pattern.sub("", text).strip()
         
         if not stripped_text:
-            # Not actually a command, pass to next
-            return next()
+            # Not actually a command, do nothing
+            return
         
-        # Check if the stripped text matches "add model ..." or "remove model ..."
+        # Check if the text matches "add model ..." or "remove model ..."
         match = COMMAND_REGEX.match(stripped_text)
         if not match:
-            # If it doesn't match, pass control to the next handler, 
-            # so we don't show "Could not parse command"
-            return next()
+            # If it doesn't match, do nothing (no error message),
+            # so other handlers can process the mention.
+            return
         
-        # If we do match, this is definitely an add/remove command
         action = match.group(1).lower()   # 'add' or 'remove'
         model_name = match.group("model").lower()
         
