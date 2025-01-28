@@ -14,15 +14,17 @@ def register(app: App):
     """
     Register the Model Manager plugin with the given Slack Bolt app.
     
-    Args:
-        app (App): The Slack Bolt App instance to register event listeners with.
+    This plugin only handles commands like:
+      - "@BotName add model <model_name>"
+      - "@BotName remove model <model_name>"
+    If the event doesn't match, we call next() to let other handlers handle it.
     """
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
     
     # Retrieve admin user IDs from environment variable (comma-separated)
-    ADMIN_USER_IDS = os.environ.get("ADMIN_USER_IDS", "")
-    ADMIN_USER_IDS = set(uid.strip() for uid in ADMIN_USER_IDS.split(",") if uid.strip())
+    admin_users_str = os.environ.get("ADMIN_USER_IDS", "")
+    ADMIN_USER_IDS = set(uid.strip() for uid in admin_users_str.split(",") if uid.strip())
     
     if not ADMIN_USER_IDS:
         logger.warning("No ADMIN_USER_IDS defined. Only the bot itself can perform admin actions.")
@@ -31,43 +33,40 @@ def register(app: App):
     COMMAND_REGEX = re.compile(r"^(add|remove)\s+model\s+(?P<model>[\w-]+)$", re.IGNORECASE)
     
     @app.event("app_mention")
-    def handle_app_mention_events(event, say, logger):
+    def handle_model_commands(event, say, context, next):
         """
-        Handle 'app_mention' events from Slack.
-        Parses commands to add or remove GPT models.
+        Handle 'app_mention' events from Slack. 
+        Only processes commands to add or remove GPT models; 
+        otherwise, it calls next() so other plugins can handle.
         
-        Expected command format:
+        Expected commands:
             - "@BotName add model gpt-4"
             - "@BotName remove model gpt-3.5-turbo"
-        
-        Args:
-            event (dict): The event payload from Slack.
-            say (function): Function to send messages back to Slack.
-            logger (Logger): Logger instance for logging.
         """
         user_id = event.get("user")
         text = event.get("text", "")
         
         if not user_id or not text:
-            logger.warning("Received app_mention event without user ID or text.")
-            return
+            logger.warning("Received app_mention event without user_id or text.")
+            return next()  # Let other handlers see this event
         
         # Remove all bot mentions from the text
-        # Slack mentions are in the format <@U12345678>
         mention_pattern = re.compile(r"<@[\w]+>")
         stripped_text = mention_pattern.sub("", text).strip()
         
         if not stripped_text:
-            say(f"<@{user_id}>, please provide a command after mentioning me.")
-            return
+            # Not actually a command, pass to next
+            return next()
         
-        # Parse the command using regex
+        # Check if the stripped text matches "add model ..." or "remove model ..."
         match = COMMAND_REGEX.match(stripped_text)
         if not match:
-            say("Could not parse command. Use `add model <model_name>` or `remove model <model_name>`.")
-            return
+            # If it doesn't match, pass control to the next handler, 
+            # so we don't show "Could not parse command"
+            return next()
         
-        action = match.group(1).lower()
+        # If we do match, this is definitely an add/remove command
+        action = match.group(1).lower()   # 'add' or 'remove'
         model_name = match.group("model").lower()
         
         # Check if the user is an admin
@@ -80,16 +79,16 @@ def register(app: App):
             if model_name in AVAILABLE_MODELS:
                 say(f"Model '{model_name}' is already available.")
                 logger.info(f"Admin {user_id} attempted to add existing model '{model_name}'.")
-                return
-            AVAILABLE_MODELS.add(model_name)
-            say(f"Model '{model_name}' has been added to the available models.")
-            logger.info(f"Admin {user_id} added model '{model_name}'.")
+            else:
+                AVAILABLE_MODELS.add(model_name)
+                say(f"Model '{model_name}' has been added to the available models.")
+                logger.info(f"Admin {user_id} added model '{model_name}'.")
         
         elif action == "remove":
             if model_name not in AVAILABLE_MODELS:
                 say(f"Model '{model_name}' is not available.")
                 logger.info(f"Admin {user_id} attempted to remove non-existent model '{model_name}'.")
-                return
-            AVAILABLE_MODELS.remove(model_name)
-            say(f"Model '{model_name}' has been removed from the available models.")
-            logger.info(f"Admin {user_id} removed model '{model_name}'.")
+            else:
+                AVAILABLE_MODELS.remove(model_name)
+                say(f"Model '{model_name}' has been removed from the available models.")
+                logger.info(f"Admin {user_id} removed model '{model_name}'.")
