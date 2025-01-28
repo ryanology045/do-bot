@@ -1,8 +1,11 @@
 # services/openai_service.py
-#"""
-#Service for interacting with OpenAI models (Chat Completions, rewrites, etc.).
-#Implements a per-instance queue system for sequential requests.
-#"""
+"""
+Service for interacting with OpenAI models (Chat Completions, rewrites, etc.).
+Implements:
+- A per-(model, instance_id) queue system for sequential requests (via process_request).
+- A ChatGPTSessionManager for multi-turn conversations (via generate_response).
+- A global BOT_ROLE (system message) that can be set dynamically.
+"""
 
 import os
 import openai
@@ -11,8 +14,8 @@ from threading import Lock
 
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
-# We'll keep track of "available" model names that can be referenced
-# You can set a default set here, and allow dynamic updates from model_manager plugin
+# We'll keep track of "available" model names that can be referenced.
+# You can set a default set here, and allow dynamic updates (e.g., via model_manager plugin).
 AVAILABLE_MODELS = set([
     "gpt-3.5-turbo",
     "gpt-3.5-turbo-16k",
@@ -21,7 +24,12 @@ AVAILABLE_MODELS = set([
     # Add or remove as needed
 ])
 
-# Queues per (model, instance_id)
+# ---------------------------------------------------------------------
+# NEW: A global "BOT_ROLE" for the system message. Can be updated by users at runtime.
+# ---------------------------------------------------------------------
+BOT_ROLE = "You are an impartial analyst with deep knowledge of Do Kwon, founder of Terraform Labs, and his cryptocurrency Luna. Provide concise, well-researched insights into his personality, leadership style, and public image, referencing known facts and events. Present the information objectively, acknowledging various viewpoints and controversies."
+
+# Queues per (model, instance_id) for sequential requests
 _instance_queues = {}
 _queue_locks = Lock()
 
@@ -38,14 +46,15 @@ def _get_queue(model, instance_id) -> Queue:
             _instance_queues[key] = Queue()
         return _instance_queues[key]
 
-def _chat_completion(model, user_prompt):
+def _chat_completion_single(model, user_prompt):
     """
-    Calls OpenAI ChatCompletion create endpoint with the user prompt.
+    Calls OpenAI ChatCompletion with a single-turn approach (no conversation history).
+    Incorporates BOT_ROLE as the system message.
     """
-    # Simple example, you can pass system or context messages as well
     response = openai.ChatCompletion.create(
         model=model,
         messages=[
+            {"role": "system", "content": BOT_ROLE},
             {"role": "user", "content": user_prompt}
         ],
         temperature=0.7
@@ -54,39 +63,41 @@ def _chat_completion(model, user_prompt):
 
 def process_request(model, instance_id, user_prompt):
     """
-    Puts the request in the queue for the given (model, instance_id) and processes sequentially.
+    For a single-turn request: puts the request in the queue for (model, instance_id),
+    then processes it sequentially. Returns the assistant's reply.
     """
     if model not in AVAILABLE_MODELS:
         return f"Model '{model}' is not available. Please add it or choose another."
 
     q = _get_queue(model, instance_id)
-    
-    # We'll define a small wrapper to run synchronously
-    def worker():
-        return _chat_completion(model, user_prompt)
 
-    # Put the worker in the queue and wait for result
     result_container = []
-    
+
     def job():
-        result_container.append(worker())
+        try:
+            result = _chat_completion_single(model, user_prompt)
+        except Exception as e:
+            result_container.append(f"OpenAI API error: {str(e)}")
+            return
+        result_container.append(result)
 
     # Produce
     q.put(job)
-    
-    # Consume (synchronously for demonstration; in production you might run a separate thread)
-    job_to_run = q.get()
-    job_to_run()
+
+    # Consume synchronously here (blocking).
+    task = q.get()
+    task()
     q.task_done()
 
-    return result_container[0]
+    return result_container[0] if result_container else "No response."
 
 def openai_rewrite(user_text):
     """
-    Example function to rewrite user text using openai.
+    Example function to rewrite user text using a default model (gpt-3.5-turbo).
+    Returns rewritten text or an error message.
     """
     if "gpt-3.5-turbo" not in AVAILABLE_MODELS:
-        return user_text  # fallback if model not available
+        return user_text  # fallback if the model isn't available
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -99,108 +110,95 @@ def openai_rewrite(user_text):
     except Exception as e:
         return f"Rewrite error: {str(e)}"
 
-# services/openai_service.py
-
-# [All your existing imports and code above remain unchanged]
-# ...
-# existing code: AVAILABLE_MODELS, _instance_queues, _queue_locks, etc.
-
+# ---------------------------------------------------------------------
+# Multi-turn conversation manager, with BOT_ROLE as a system message.
+# ---------------------------------------------------------------------
 class ChatGPTSessionManager:
     """
-    A session manager that keeps track of conversations per (model, instance_id) and
-    uses the existing queue-based approach for sequential ChatCompletion requests.
+    Manages conversation history per (model, instance_id) using the same
+    queue-based approach for sequential ChatCompletion requests.
     """
     def __init__(self):
-        """
-        Initialize the ChatGPTSessionManager with an internal dictionary to store
-        conversation history per (model, instance_id).
-        """
-        # Key: (model, instance_id), Value: list of chat messages (dicts with 'role', 'content')
+        # Key: (model, instance_id) -> list of {"role": "user"/"assistant"/"system", "content": str}
         self._conversations = {}
 
     def _init_conversation(self, model: str, instance_id: str):
-        """
-        Create a new conversation list for (model, instance_id) if it doesn't exist yet.
-        """
         key = (model, instance_id)
         if key not in self._conversations:
             self._conversations[key] = []
 
     def add_user_message(self, model: str, instance_id: str, user_text: str):
         """
-        Add the user's message to the conversation history.
+        Append user's message to the conversation history.
         """
         self._init_conversation(model, instance_id)
         self._conversations[(model, instance_id)].append({"role": "user", "content": user_text})
 
     def add_assistant_message(self, model: str, instance_id: str, assistant_text: str):
         """
-        Add the assistant's (OpenAI's) message to the conversation history.
+        Append assistant's (OpenAI's) message to the conversation history.
         """
         self._init_conversation(model, instance_id)
         self._conversations[(model, instance_id)].append({"role": "assistant", "content": assistant_text})
 
     def get_conversation(self, model: str, instance_id: str):
         """
-        Retrieve the entire conversation list for (model, instance_id).
-        Returns an empty list if none exists yet.
+        Retrieve the entire conversation for (model, instance_id). Returns an empty list if none exists.
         """
         return self._conversations.get((model, instance_id), [])
 
     def generate_response(self, model: str, instance_id: str, user_text: str) -> str:
         """
-        Adds the user's message to the conversation, then calls OpenAI's ChatCompletion,
-        updates the conversation with the assistant reply, and returns the assistant's response.
-        Uses the same queue-based approach as process_request for concurrency.
+        Multi-turn approach: add user's message, call ChatCompletion with BOT_ROLE as system,
+        store assistant reply, and return it. Uses queue for concurrency control.
         """
-        # 1. Check if model is available
         if model not in AVAILABLE_MODELS:
             return f"Model '{model}' is not available. Please add it or choose another."
 
-        # 2. Initialize or retrieve the conversation
+        # Initialize conversation if needed
         self._init_conversation(model, instance_id)
 
-        # 3. Add the user message to conversation
+        # Add the user's latest message
         self.add_user_message(model, instance_id, user_text)
 
-        # 4. We'll define a small worker that calls the existing `_chat_completion`,
-        #    but we pass in the entire conversation as the "messages" parameter.
+        # Worker function that calls OpenAI API with system + conversation messages
         def worker():
-            conversation_messages = self.get_conversation(model, instance_id)
-            # Example usage with the existing openai.ChatCompletion:
-            response = openai.ChatCompletion.create(
-                model=model,
-                messages=conversation_messages,
-                temperature=0.7
-            )
-            reply = response.choices[0].message["content"]
-            # Add the assistant's reply to the conversation
-            self.add_assistant_message(model, instance_id, reply)
-            return reply
+            # Build messages: system role first, then conversation
+            messages = [{"role": "system", "content": BOT_ROLE}]
+            messages += self.get_conversation(model, instance_id)
 
-        # 5. Use the same queue logic as process_request
+            try:
+                response = openai.ChatCompletion.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0.7
+                )
+                assistant_text = response.choices[0].message["content"]
+                self.add_assistant_message(model, instance_id, assistant_text)
+                return assistant_text
+            except Exception as e:
+                return f"OpenAI API error: {str(e)}"
+
+        # Use the same queue approach
         q = _get_queue(model, instance_id)
-        result_container = []
+        result_holder = []
 
         def job():
-            result_container.append(worker())
+            result_holder.append(worker())
 
         q.put(job)
-        job_to_run = q.get()
-        job_to_run()
+        task = q.get()
+        task()
         q.task_done()
 
-        # 6. Return the assistant's generated reply
-        return result_container[0]
+        return result_holder[0]
 
-# ---------------------------------------------------------------------
-# Provide a single session_manager instance + a helper function
-# ---------------------------------------------------------------------
+# A single instance of ChatGPTSessionManager for the entire bot
 _session_manager = ChatGPTSessionManager()
 
 def generate_response(model: str, instance_id: str, user_text: str) -> str:
     """
-    Wraps the ChatGPTSessionManager instance method.
-    This is the function you can import and call directly.
+    Public function to handle multi-turn conversation flows. 
+    This is used by the gpt_interaction plugin in the Slack event.
     """
     return _session_manager.generate_response(model, instance_id, user_text)
