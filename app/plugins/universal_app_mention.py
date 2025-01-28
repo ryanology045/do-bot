@@ -2,28 +2,24 @@
 
 import os
 import json
+import re
 import logging
 import openai
 from slack_bolt import App
-import services.openai_service as openai_service
 
 from plugins.rate_limiting import rate_limit_check
 from services.openai_service import (
     AVAILABLE_MODELS,
-    DEFAULT_MODEL,
-#    logger as openai_logger
+    DEFAULT_MODEL
 )
 from services.github_service import rollback_to_tag, get_last_deployment_tag
-
-# Self-upgrade helpers (multi-step) -- we won't do mention-based regex
 from plugins.self_upgrade import (
     handle_request_upgrade,
     handle_confirm_upgrade,
     handle_new_code,
     handle_do_sanity_check,
     handle_finalize_upgrade,
-    handle_abort_upgrade,
-    PENDING_UPGRADES
+    handle_abort_upgrade
 )
 
 logger = logging.getLogger(__name__)
@@ -31,18 +27,14 @@ logger.setLevel(logging.INFO)
 
 ADMIN_USER_IDS = set(uid.strip() for uid in os.environ.get("ADMIN_USER_IDS", "").split(",") if uid.strip())
 
-UPGRADE_CHANNEL_NAME = "bot-upgrades"  # If you want to require that channel for upgrades
+UPGRADE_CHANNEL_NAME = "bot-upgrades"
 
-# If you want to do "are you sure?" confirmations, store them here
+# Temporary in-memory confirmations
 PENDING_CONFIRMATIONS = {}
 
-###################################################
-# A system prompt telling GPT how to produce
-# a single JSON snippet for each user mention.
-###################################################
 SYSTEM_PROMPT = """\
-You are a Slackbot that interprets all user mentions with NO hard-coded regex.
-You must produce exactly one JSON snippet at the end of your message in this format:
+You are a Slackbot that interprets the user's mention with NO hard-coded regex, 
+and produces exactly one JSON snippet in the format:
 
 <<JSON:
 {
@@ -56,53 +48,52 @@ You must produce exactly one JSON snippet at the end of your message in this for
 }
 JSON>>
 
-1) If user says "set model to X" or "add model X" => "action":"update_model", "model_name":"X".
-2) If user wants to do a rollback => "action":"rollback", "rollback_target":"<tag or 'last'>".
-3) If user wants to do a self-upgrade step => "action":"upgrade",
-   "upgrade_step":"request|confirm|new_code|do_sanity|finalize|abort",
-   "upgrade_data":"(description or code snippet if relevant)".
-4) If user is just chatting => "action":"chat" or "none".
-5) If request is "risky" or requires confirmation => "confirmation_needed":true.
-6) Place normal text or answer in "message_for_user", but the Slackbot code will parse your JSON to do the actual action.
-
-Only produce one JSON snippet, enclosed with <<JSON: ... JSON>>. No disclaimers that you "cannot" do something—just produce the JSON instructions for the Slackbot.
+1) "set model to X" => action="update_model", model_name="X"
+2) "rollback last" => action="rollback", rollback_target="last"
+3) self-upgrade => action="upgrade", upgrade_step=...
+4) normal chat => action="chat" or "none"
+5) if request is risky => "confirmation_needed": true
+Place normal text in "message_for_user". 
+No disclaimers about "cannot" do something—just produce the snippet.
 """
 
 def register(app: App):
     @app.event("app_mention")
     def universal_app_mention(event, say):
         """
-        Single GPT call that returns a JSON snippet describing the user's intent:
-          "update_model", "rollback", "upgrade", "chat" etc.
-        The Slackbot code then performs that action (no separate regex).
+        Single GPT-based approach: 
+        1) If user typed "yes," handle pending confirmations. 
+        2) Otherwise, call GPT for a JSON snippet describing the user's request.
+        3) Parse & perform that action. 
+        4) Also print the raw JSON snippet in Slack.
         """
         user_id = event.get("user", "")
         text = event.get("text", "").strip()
         channel_id = event.get("channel", "")
 
-        # Basic checks
         if not user_id or not text:
             return
 
-        # Rate limit
+        # Rate limit check
         if not rate_limit_check(user_id):
             say(f"<@{user_id}> You've hit the rate limit. Try again later.")
             return
 
-        # If user typed "yes" => confirm an existing action
+        # If user typed "yes," see if there's a pending confirmation
         if text.lower() == "yes":
             if user_id in PENDING_CONFIRMATIONS:
                 pending_action, pending_data = PENDING_CONFIRMATIONS.pop(user_id)
-                handle_confirmation(user_id, pending_action, pending_data, say)
+                _handle_confirmed_action(user_id, pending_action, pending_data, say)
                 return
 
-        # Otherwise, do a single GPT call for classification + normal text
-        gpt_answer = call_gpt(text)
+        # Otherwise, do a single GPT call 
+        gpt_answer = _call_gpt_with_prompt(text)
 
-        # Parse out the JSON snippet
+        # Extract the JSON snippet
         start_tag = "<<JSON:"
         end_tag = "JSON>>"
         user_facing_text = gpt_answer
+
         action = "none"
         model_name = ""
         rollback_target = ""
@@ -113,10 +104,14 @@ def register(app: App):
 
         start_idx = gpt_answer.find(start_tag)
         end_idx = gpt_answer.find(end_tag)
+
+        json_part = None
         if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
             json_part = gpt_answer[start_idx + len(start_tag):end_idx].strip()
-            user_facing_text = (gpt_answer[:start_idx] + gpt_answer[end_idx + len(end_tag):]).strip()
-
+            user_facing_text = (
+                gpt_answer[:start_idx] + gpt_answer[end_idx + len(end_tag):]
+            ).strip()
+            # Attempt to parse
             try:
                 data = json.loads(json_part)
                 action = data.get("action", "none")
@@ -127,109 +122,109 @@ def register(app: App):
                 message_for_user = data.get("message_for_user", "")
                 confirmation_needed = data.get("confirmation_needed", False)
             except Exception as e:
-                logger.warning(f"Error parsing GPT JSON: {e}")
+                logger.warning(f"Could not parse GPT JSON block: {e}")
 
-        # Combine any leftover text with the "message_for_user"
+        # Print the raw JSON snippet in Slack
+        if json_part:
+            say(f"<@{user_id}> **GPT JSON snippet**:\n```json\n{json_part}\n```")
+
+        # Combine leftover text with "message_for_user"
         final_text = user_facing_text
-        if message_for_user:
+        if message_for_user.strip():
             if final_text.strip():
                 final_text += "\n" + message_for_user
             else:
                 final_text = message_for_user
 
-        # If there's user-facing text, show it
+        # Show user-facing text
         if final_text.strip():
             say(f"<@{user_id}> {final_text}")
 
-        # Now interpret "action"
+        # Perform action
         if action == "update_model":
             if user_id not in ADMIN_USER_IDS:
                 say(f"<@{user_id}> Not authorized to update model.")
                 return
             if confirmation_needed:
                 PENDING_CONFIRMATIONS[user_id] = ("update_model", model_name)
-                say(f"<@{user_id}> Type 'yes' to confirm updating the model to '{model_name}'.")
+                say(f"<@{user_id}> Type 'yes' to confirm updating model to '{model_name}'.")
             else:
-                handle_update_model(user_id, model_name, say)
+                _handle_update_model(user_id, model_name, say)
+
         elif action == "rollback":
             if user_id not in ADMIN_USER_IDS:
-                say(f"<@{user_id}> Not authorized to rollback.")
+                say(f"<@{user_id}> Not authorized for rollback.")
                 return
             if not rollback_target:
-                say("No rollback target specified.")
+                say(f"<@{user_id}> No rollback target found.")
                 return
             if confirmation_needed:
                 PENDING_CONFIRMATIONS[user_id] = ("rollback", rollback_target)
                 say(f"<@{user_id}> Type 'yes' to confirm rollback to '{rollback_target}'.")
             else:
-                handle_rollback(user_id, rollback_target, say)
+                _handle_rollback(user_id, rollback_target, say)
+
         elif action == "upgrade":
-            # check if the user is in the right channel if you want
+            # Check channel if you want to restrict
             channel_name = get_channel_name(app, channel_id)
             if UPGRADE_CHANNEL_NAME.lower() not in channel_name.lower():
-                say(f"<@{user_id}> Upgrades must be requested in #{UPGRADE_CHANNEL_NAME}.")
+                say(f"<@{user_id}> Upgrades must be in #{UPGRADE_CHANNEL_NAME} channel.")
                 return
-            # proceed
-            handle_upgrade(user_id, upgrade_step, upgrade_data, say)
+            # handle the step
+            _handle_upgrade_step(user_id, upgrade_step, upgrade_data, say)
+
         else:
-            # "chat" or "none" => do nothing special
+            # "none" or "chat" => do nothing special
             pass
 
-
-def call_gpt(user_text: str) -> str:
+def _call_gpt_with_prompt(user_text: str) -> str:
     """
-    Single call to GPT with the system prompt to produce the JSON snippet.
+    Single call to GPT with the system prompt => returns the entire answer (with JSON snippet).
     """
-    import openai
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo",  # or "gpt-4"
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_text}
             ],
             temperature=0.7
         )
-        return response.choices[0].message["content"].strip()
+        return response["choices"][0]["message"]["content"].strip()
     except Exception as e:
         logger.error(f"Error calling GPT: {e}")
-        return f"Error from GPT: {e}"
+        return f"GPT error: {e}"
 
-def handle_confirmation(user_id: str, pending_action: str, pending_data: str, say):
-    """
-    Called when user typed 'yes' to confirm a previously stored action.
-    """
+def _handle_confirmed_action(user_id: str, pending_action: str, pending_data: str, say):
     if pending_action == "update_model":
-        handle_update_model(user_id, pending_data, say, confirmed=True)
+        _handle_update_model(user_id, pending_data, say, confirmed=True)
     elif pending_action == "rollback":
-        handle_rollback(user_id, pending_data, say, confirmed=True)
+        _handle_rollback(user_id, pending_data, say, confirmed=True)
     else:
-        say(f"<@{user_id}> Unknown pending confirmation action '{pending_action}'.")
+        say(f"<@{user_id}> Unknown action '{pending_action}' for confirmation.")
 
-def handle_update_model(user_id: str, model_name: str, say, confirmed=False):
-    if model_name not in openai_service.AVAILABLE_MODELS:
-        say(f"<@{user_id}> Model '{model_name}' is not in AVAILABLE_MODELS.")
+def _handle_update_model(user_id: str, model_name: str, say, confirmed=False):
+    if model_name not in AVAILABLE_MODELS:
+        say(f"<@{user_id}> Model '{model_name}' isn't recognized.")
         return
-    openai_service.DEFAULT_MODEL = model_name
-    note = " (confirmed)" if confirmed else ""
-    say(f"<@{user_id}> Updated model to '{model_name}'{note}.")
+    global DEFAULT_MODEL
+    DEFAULT_MODEL = model_name
+    c_note = " (confirmed)" if confirmed else ""
+    say(f"<@{user_id}> Updated model to '{model_name}'{c_note}.")
 
-def handle_rollback(user_id: str, target: str, say, confirmed=False):
+def _handle_rollback(user_id: str, target: str, say, confirmed=False):
     try:
         rollback_to_tag(target)
-        note = " (confirmed)" if confirmed else ""
-        say(f"<@{user_id}> Rolled back to '{target}'{note}.")
+        c_note = " (confirmed)" if confirmed else ""
+        say(f"<@{user_id}> Rolled back to '{target}'{c_note}.")
     except Exception as e:
-        say(f"Rollback failed: {e}")
+        say(f"Rollback error: {e}")
 
-def handle_upgrade(user_id: str, step: str, data: str, say):
+def _handle_upgrade_step(user_id: str, step: str, data: str, say):
     """
-    Calls the self_upgrade logic for 'request', 'confirm', etc.
+    Delegates to self_upgrade helper functions
     """
-    # map steps to the helper functions
     from plugins import self_upgrade
-
-    # Example: step could be "request", "confirm", "new_code", "do_sanity", "finalize", "abort"
     step_lower = step.lower()
     if step_lower == "request":
         msg = self_upgrade.handle_request_upgrade(user_id, data)
@@ -250,13 +245,9 @@ def handle_upgrade(user_id: str, step: str, data: str, say):
         msg = self_upgrade.handle_abort_upgrade(user_id)
         say(f"<@{user_id}> {msg}")
     else:
-        say(f"<@{user_id}> Unrecognized upgrade step '{step}'. Try request, confirm, new_code, do_sanity, finalize, abort.")
-
+        say(f"<@{user_id}> Unrecognized upgrade step '{step}'. Use request, confirm, new_code, do_sanity, finalize, abort.")
 
 def get_channel_name(app: App, channel_id: str) -> str:
-    """
-    Retrieves the Slack channel name for this channel_id (used for upgrade enforcement).
-    """
     from slack_sdk import WebClient
     from slack_sdk.errors import SlackApiError
     token = os.environ.get("SLACK_BOT_TOKEN", "")
