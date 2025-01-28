@@ -38,7 +38,7 @@ DO_SANITY_CHECK_REGEX = re.compile(r"^do\s+sanity\s+check$", re.IGNORECASE)
 FINALIZE_UPGRADE_REGEX = re.compile(r"^finalize\s+upgrade$", re.IGNORECASE)
 ABORT_UPGRADE_REGEX = re.compile(r"^abort\s+upgrade$", re.IGNORECASE)
 
-UPGRADE_CHANNEL_NAME = "upgrade_channel_name"  # If you want to enforce a special channel
+UPGRADE_CHANNEL_NAME = "bot-upgrades"  # If you want to enforce a special channel
 
 def register(app: App):
     @app.event("app_mention")
