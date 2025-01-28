@@ -65,7 +65,7 @@ jobs:
         with:
           task-definition: ecs-task-def-updated.json
           container-name: "do-bot"
-          image: ${{ secrets.AWS_ECR_REGISTRY }}:latest
+          image: ${{ secrets.ECR_REPO_URI }}:latest
 
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
