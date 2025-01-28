@@ -13,6 +13,9 @@ import re
 from queue import Queue
 from threading import Lock
 
+# services/openai_service.py
+DEFAULT_MODEL = "o1-mini"
+
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 # We'll keep track of "available" model names that can be referenced
