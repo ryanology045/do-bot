@@ -56,7 +56,7 @@ jobs:
           export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
           export SLACK_APP_TOKEN=${{ secrets.SLACK_APP_TOKEN }}
           export SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
-          export IMAGE=${{ secrets.ECR_REPO_URI }}/do-bot:latest
+          export IMAGE=${{ secrets.ECR_REPO_URI }}:latest
 
           envsubst < ecs-task-def.json > ecs-task-def-updated.json
       
