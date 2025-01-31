@@ -4,7 +4,7 @@ import os
 from flask import Flask, jsonify
 
 def create_app():
-    from .bot_engine import BotEngine
+    from core.bot_engine import BotEngine
     from services.slack_service.slack_adapter import SlackAdapter
 
     app = Flask(__name__)
