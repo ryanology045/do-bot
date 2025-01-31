@@ -9,7 +9,7 @@ from slack_sdk.signature import SignatureVerifier
 logger = logging.getLogger(__name__)
 
 class SlackService:
-    def __init__(self, bot_engine):
+    def __init__(self, bot_engine=None):
         self.bot_engine = bot_engine
         self.signing_secret = os.environ.get("SLACK_SIGNING_SECRET", "")
         self.signature_verifier = SignatureVerifier(self.signing_secret)
