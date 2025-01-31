@@ -35,12 +35,7 @@ class SlackService:
         signature = req.headers.get("X-Slack-Signature", "")
         body = req.get_data(as_text=True)
         return self.signature_verifier.is_valid(body, timestamp, signature)
-
-
-class SlackPostClient:
-    def __init__(self):
-        self.web_client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN", ""))
-
+    
     def post_message(self, channel, text, thread_ts=None):
         try:
             self.web_client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
