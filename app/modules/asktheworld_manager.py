@@ -4,6 +4,8 @@ from core.module_manager import BaseModule
 from services.chatgpt_service import ChatGPTService
 from services.slack_service import SlackService
 
+self.slack_post_client = SlackServices().slack_post_client
+
 class AskTheWorldManager(BaseModule):
     module_name = "asktheworld_manager"
     module_type = "ASKTHEWORLD"
