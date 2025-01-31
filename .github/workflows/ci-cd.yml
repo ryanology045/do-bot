@@ -1,77 +1,72 @@
-name: CI-CD
+# .github/workflows/ci-cd.yml
+
+name: CI/CD to AWS ECS
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "deploy" ]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out the repository
         uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: "us-east-2"  # Ensure this matches your ECR and ECS regions
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
       - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1
-        with:
-          registry-type: private  # Optional: defaults to 'private'
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_DEFAULT_REGION }} | \
+          docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URI }}
 
       - name: Build Docker image
         run: |
-          IMAGE_URI=${{ secrets.ECR_REPO_URI }}:latest
-          docker build -t $IMAGE_URI .
+          docker build -t slackbot-app:latest .
 
-      - name: Push Docker image to ECR
+      - name: Tag Docker image
         run: |
-          IMAGE_URI=${{ secrets.ECR_REPO_URI }}:latest
-          docker push $IMAGE_URI
+          docker tag slackbot-app:latest ${{ secrets.ECR_REPO_URI }}:latest
 
-
-
-      # Uncomment and configure the following steps if you wish to deploy to ECS
-      - name: Replace Placeholders in Task Definition
+      - name: Push to ECR
         run: |
-          # Export secrets as environment variables
-          export ECS_SERVICE=${{ secrets.ECS_SERVICE }}
-          export PORT=${{ secrets.PORT }}
-          export GH_OWNER=${{ secrets.GH_OWNER }}
-          export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          export AWS_DEFAULT_REGION=${{ secrets.AWS_DEFAULT_REGION }}
-          export GH_REPO_NAME=${{ secrets.GH_REPO_NAME }}
-          export GH_TOKEN=${{ secrets.GH_TOKEN }}
-          export ECS_CLUSTER=${{ secrets.ECS_CLUSTER }}
-          export SLACK_SIGNING_SECRET=${{ secrets.SLACK_SIGNING_SECRET }}
-          export ADMIN_USER_IDS=${{ secrets.ADMIN_USER_IDS }}
-          export GH_REPO=${{ secrets.GH_REPO }}
-          export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-          export ECR_REPO_URI=${{ secrets.ECR_REPO_URI }}
-          export ECS_TASK_DEFINITION=${{ secrets.ECS_TASK_DEFINITION }}
-          export OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          export SLACK_APP_TOKEN=${{ secrets.SLACK_APP_TOKEN }}
-          export SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
+          docker push ${{ secrets.ECR_REPO_URI }}:latest
 
-          envsubst < ecs-task-def.json > ecs-task-def-updated.json
-      
-      - name: Render Task Definition
-        id: render-task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ecs-task-def-updated.json
-          container-name: "do-bot"
-          image: ${{ secrets.ECR_REPO_URI }}:latest
+      - name: Inject environment variables into ECS Task Definition
+        run: |
+          sed -i "s|<IMAGE_URI>|${{ secrets.ECR_REPO_URI }}:latest|g" deployment/ecs_task_definition.json
 
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-          service: "do-bot"
-          cluster: "do-bot"
-          wait-for-service-stability: true
-          force-new-deployment: true
+          sed -i "s|<ADMIN_USER_IDS>|${{ secrets.ADMIN_USER_IDS }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<AWS_ACCESS_KEY_ID>|${{ secrets.AWS_ACCESS_KEY_ID }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<AWS_DEFAULT_REGION>|${{ secrets.AWS_DEFAULT_REGION }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<AWS_SECRET_ACCESS_KEY>|${{ secrets.AWS_SECRET_ACCESS_KEY }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<ECR_REPO_URI>|${{ secrets.ECR_REPO_URI }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<ECS_CLUSTER>|${{ secrets.ECS_CLUSTER }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<ECS_SERVICE>|${{ secrets.ECS_SERVICE }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<ECS_TASK_DEFINITION>|${{ secrets.ECS_TASK_DEFINITION }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<GH_OWNER>|${{ secrets.GH_OWNER }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<GH_REPO>|${{ secrets.GH_REPO }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<GH_REPO_NAME>|${{ secrets.GH_REPO_NAME }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<GH_TOKEN>|${{ secrets.GH_TOKEN }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<OPENAI_API_KEY>|${{ secrets.OPENAI_API_KEY }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<PORT>|${{ secrets.PORT }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<SLACK_APP_TOKEN>|${{ secrets.SLACK_APP_TOKEN }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<SLACK_BOT_TOKEN>|${{ secrets.SLACK_BOT_TOKEN }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<SLACK_SIGNING_SECRET>|${{ secrets.SLACK_SIGNING_SECRET }}|g" deployment/ecs_task_definition.json
+          sed -i "s|<UPGRADE_CHANNEL_NAME>|${{ secrets.UPGRADE_CHANNEL_NAME }}|g" deployment/ecs_task_definition.json
+
+      - name: Register Task Definition & Update Service
+        run: |
+          aws ecs register-task-definition \
+            --cli-input-json file://deployment/ecs_task_definition.json
+
+          aws ecs update-service \
+            --cluster ${{ secrets.ECS_CLUSTER }} \
+            --service ${{ secrets.ECS_SERVICE }} \
+            --force-new-deployment
