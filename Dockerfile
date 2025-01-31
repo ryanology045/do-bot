@@ -35,4 +35,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Define the default command
-CMD ["python", "-u", "core/main.py"]
+CMD ["python", "-u", "-m", "core.main"]
