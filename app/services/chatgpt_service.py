@@ -1,4 +1,4 @@
-# project_root/services/gpt_service.py
+# project_root/services/chatgpt_service.py
 
 import os
 import openai
@@ -6,7 +6,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class GPTService:
+class ChatGPTService:
+    """
+    Handles ChatGPT calls for both classification and Q&A with conversation history.
+    """
+
     def __init__(self):
         self.api_key = os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
@@ -15,8 +19,8 @@ class GPTService:
 
     def classify_chat(self, conversation):
         """
-        For classification usage: 0.0 temperature for deterministic JSON.
-        conversation is a list of {role, content}.
+        Used by classification_manager. Usually temperature=0.0 for deterministic JSON.
+        'conversation' is a list of messages (role='system'|'user'|'assistant').
         """
         try:
             response = openai.ChatCompletion.create(
@@ -27,12 +31,13 @@ class GPTService:
             )
             return response["choices"][0]["message"]["content"]
         except Exception as e:
-            logger.error(f"Error from classify_chat: {e}")
+            logger.error(f"ChatGPT classify_chat error: {e}")
             return """{"request_type":"ASKTHEWORLD","role_info":"default","extra_data":{}}"""
 
     def chat_with_history(self, conversation, model="gpt-3.5-turbo", temperature=0.7):
         """
-        For Q&A with conversation context.
+        For the 'AskTheWorld' Q&A manager. 'conversation' is a list of
+        dicts with roles: 'system', 'user', 'assistant'.
         """
         try:
             response = openai.ChatCompletion.create(
@@ -43,5 +48,5 @@ class GPTService:
             )
             return response["choices"][0]["message"]["content"]
         except Exception as e:
-            logger.error(f"Error from chat_with_history: {e}")
+            logger.error(f"ChatGPT chat_with_history error: {e}")
             return "I'm having trouble responding right now."
