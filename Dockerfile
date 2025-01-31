@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -29,6 +29,10 @@ RUN pip install --no-cache-dir -r requirements.txt --retries 5 --timeout 30 --in
 COPY app/ /app/
 
 ENV PYTHONPATH=/app
+
+# Default port
+ENV PORT=8080
+EXPOSE 8080
 
 # Define the default command
 CMD ["python", "-u", "core/main.py"]
