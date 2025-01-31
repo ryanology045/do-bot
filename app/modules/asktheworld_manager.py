@@ -2,7 +2,7 @@
 
 from core.module_manager import BaseModule
 from services.chatgpt_service import ChatGPTService
-from services.slack_services import SlackServices
+from services.slack_service import SlackService
 
 class AskTheWorldManager(BaseModule):
     module_name = "asktheworld_manager"
@@ -11,7 +11,7 @@ class AskTheWorldManager(BaseModule):
     def initialize(self):
         print("[INIT] AskTheWorldManager initialized.")
         self.gpt_service = ChatGPTService()
-        self.slack_post_client = SlackServices().slack_post_client
+        self.slack_post_client = SlackService().slack_post_client
         self.thread_conversations = {}  # Slack thread_ts -> conversation list
 
     def handle_inquiry(self, user_text, system_prompt, temperature, user_id, channel, thread_ts):
