@@ -11,7 +11,7 @@ class AskTheWorldManager(BaseModule):
     def initialize(self):
         print("[INIT] AskTheWorldManager initialized.")
         self.gpt_service = ChatGPTService()
-        self.slack_post_client = SlackService().slack_post_client
+        self.slack_service = SlackService()
         self.thread_conversations = {}  # Slack thread_ts -> conversation list
 
     def handle_inquiry(self, user_text, system_prompt, temperature, user_id, channel, thread_ts):
@@ -31,4 +31,4 @@ class AskTheWorldManager(BaseModule):
         self.thread_conversations[thread_ts] = conv
 
         # Post answer to Slack
-        self.slack_post_client.post_message(channel=channel, text=response_text, thread_ts=thread_ts)
+        self.slack_service.post_message(channel=channel, text=response_text, thread_ts=thread_ts)
