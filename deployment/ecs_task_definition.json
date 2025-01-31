@@ -1,7 +1,7 @@
 {
   "family": "do-bot",
-  "executionRoleArn": "arn:aws:iam::123456789012:role/EcsTaskExecutionRole",
-  "taskRoleArn": "arn:aws:iam::123456789012:role/EcsTaskRole",
+  "executionRoleArn": "arn:aws:iam::248189924595:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::248189924595:role/EcsTaskRole",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "256",
