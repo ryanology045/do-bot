@@ -1,0 +1,51 @@
+{
+  "family": "do-bot",
+  "executionRoleArn": "arn:aws:iam::123456789012:role/EcsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::123456789012:role/EcsTaskRole",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "slackbot-app",
+      "image": "248189924595.dkr.ecr.us-east-2.amazonaws.com/do-bot:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "ADMIN_USER_IDS",         "value": "<ADMIN_USER_IDS>" },
+        { "name": "AWS_ACCESS_KEY_ID",      "value": "<AWS_ACCESS_KEY_ID>" },
+        { "name": "AWS_DEFAULT_REGION",     "value": "<AWS_DEFAULT_REGION>" },
+        { "name": "AWS_SECRET_ACCESS_KEY",  "value": "<AWS_SECRET_ACCESS_KEY>" },
+        { "name": "ECR_REPO_URI",           "value": "<ECR_REPO_URI>" },
+        { "name": "ECS_CLUSTER",            "value": "<ECS_CLUSTER>" },
+        { "name": "ECS_SERVICE",            "value": "<ECS_SERVICE>" },
+        { "name": "ECS_TASK_DEFINITION",    "value": "<ECS_TASK_DEFINITION>" },
+        { "name": "GH_OWNER",               "value": "<GH_OWNER>" },
+        { "name": "GH_REPO",                "value": "<GH_REPO>" },
+        { "name": "GH_REPO_NAME",           "value": "<GH_REPO_NAME>" },
+        { "name": "GH_TOKEN",               "value": "<GH_TOKEN>" },
+        { "name": "OPENAI_API_KEY",         "value": "<OPENAI_API_KEY>" },
+        { "name": "PORT",                   "value": "<PORT>" },
+        { "name": "SLACK_APP_TOKEN",        "value": "<SLACK_APP_TOKEN>" },
+        { "name": "SLACK_BOT_TOKEN",        "value": "<SLACK_BOT_TOKEN>" },
+        { "name": "SLACK_SIGNING_SECRET",   "value": "<SLACK_SIGNING_SECRET>" },
+        { "name": "UPGRADE_CHANNEL_NAME",   "value": "<UPGRADE_CHANNEL_NAME>" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/slackbot-app",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
