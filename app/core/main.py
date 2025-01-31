@@ -5,7 +5,7 @@ from flask import Flask, jsonify
 
 def create_app():
     from core.bot_engine import BotEngine
-    from services.slack_service.slack_adapter import SlackAdapter
+    from services.slack_service import SlackService
 
     app = Flask(__name__)
 
@@ -14,8 +14,8 @@ def create_app():
         return jsonify({"status": "ok"}), 200
 
     bot_engine = BotEngine()
-    slack_adapter = SlackAdapter(bot_engine=bot_engine)
-    slack_adapter.register_routes(app)
+    slack_service = SlackService(bot_engine=bot_engine)
+    slack_service.register_routes(app)
 
     return app
 
