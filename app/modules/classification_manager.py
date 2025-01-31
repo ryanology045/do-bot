@@ -2,7 +2,7 @@
 
 import json
 from core.module_manager import BaseModule
-from services.gpt_service import GPTService
+from services.chatgpt_service import ChatGPTService
 
 class ClassificationManager(BaseModule):
     module_name = "classification_manager"
@@ -10,21 +10,25 @@ class ClassificationManager(BaseModule):
 
     def initialize(self):
         print("[INIT] ClassificationManager initialized.")
-        self.gpt_service = GPTService()
-        self.classifier_conversation_history = []  # persistent across all classification calls
+        self.gpt_service = ChatGPTService()
+        self.classifier_conversation_history = []
 
     def handle_classification(self, user_text, user_id, channel, thread_ts):
-        """
-        Expects GPT to return valid JSON with {request_type, role_info, extra_data}.
-        """
         self.classifier_conversation_history.append({"role": "user", "content": user_text})
 
         system_prompt = (
-            "You are a classification system with persistent memory. "
-            "For the incoming user message, decide if it is a 'CONFIG_UPDATE', 'PRINT_CONFIG', or 'ASKTHEWORLD'. "
-            "Also set 'role_info' (like 'friendly', 'professional', or 'default'), "
-            "and fill 'extra_data' if user wants to set new_model, update role prompts, etc.\n"
-            "Output strictly valid JSON with keys: request_type, role_info, extra_data.\n"
+            "You are a classification system with a persistent memory of prior user messages. "
+            "For each new user message, decide if it's CONFIG_UPDATE, PRINT_CONFIG, or ASKTHEWORLD. "
+            "If the user references a new role (e.g. 'Batman'), you can define it with 'new_role_prompt'. "
+            "Output strictly valid JSON with keys: request_type, role_info, extra_data. Example:\n"
+            "{\n"
+            "  \"request_type\": \"ASKTHEWORLD\",\n"
+            "  \"role_info\": \"Batman\",\n"
+            "  \"extra_data\": {\n"
+            "    \"new_role_prompt\": \"You are Batman...\",\n"
+            "    \"role_temperature\": 0.5\n"
+            "  }\n"
+            "}\n"
         )
 
         conversation = [{"role": "system", "content": system_prompt}] + self.classifier_conversation_history
@@ -38,7 +42,7 @@ class ClassificationManager(BaseModule):
             self.classifier_conversation_history.append({"role": "assistant", "content": raw_response})
             return parsed
         except Exception as e:
-            print(f"[ERROR] Classification parse error: {e}")
+            print(f"[ERROR] Classification JSON parse error: {e}")
             self.classifier_conversation_history.append({"role": "assistant", "content": "Fallback to ASKTHEWORLD."})
             return {
                 "request_type": "ASKTHEWORLD",
