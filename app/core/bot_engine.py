@@ -88,7 +88,7 @@ class BotEngine:
 
     def _handle_config_update(self, extra_data, channel, thread_ts):
         from services.slack_service import SlackService
-        spc = SlackService().post_message
+        slack_service = SlackService()
 
         updated_something = False
 
@@ -109,9 +109,9 @@ class BotEngine:
                     updated_something = True
 
         message = "Config update successful!" if updated_something else "No recognized config fields to update."
-        spc.post_message(channel=channel, text=message, thread_ts=thread_ts)
+        post_message(channel=channel, text=message, thread_ts=thread_ts)
 
     def _handle_print_config(self, channel, thread_ts):
         from services.slack_service import SlackService
-        spc = SlackService().post_message
-        spc.post_message(channel=channel, text=f"Current Bot Config:\n{bot_config}", thread_ts=thread_ts)
+        slack_service = SlackService()
+        post_message(channel=channel, text=f"Current Bot Config:\n{bot_config}", thread_ts=thread_ts)
