@@ -1,119 +1,103 @@
-# project_root/modules/classification_manager.py
-
 import json
 import logging
 from core.module_manager import BaseModule
+from core.configs import bot_config
 from services.chatgpt_service import ChatGPTService
 
 logger = logging.getLogger(__name__)
 
 class ClassificationManager(BaseModule):
     """
-    This module classifies inbound Slack messages into:
-      - CONFIG_UPDATE
-      - PRINT_CONFIG
-      - ASKTHEWORLD
-
-    It also can detect references to new roles (e.g., 'Batman') and
-    propose a 'new_role_prompt' and 'role_temperature' in extra_data.
-
-    The conversation with GPT is persistent across messages, so
-    GPT can remember prior user contexts or role references over time.
+    SINGLE global classification GPT session for the entire Slackbot.
+    - On initialize(), we inject a big 'Full Bot Context' system prompt ONCE.
+    - Every classification call, we append user text to this single conversation.
+    - If GPT says request_type=CODER, we forcibly embed that same context in extra_data['bot_knowledge'].
+    - Potentially large memory usage. 'Cold honesty': any user can push the conversation in unexpected directions. 
     """
+
     module_name = "classification_manager"
     module_type = "CLASSIFIER"
 
     def initialize(self):
-        """
-        Called once when the module is loaded by ModuleManager.
-        """
         logger.info("[INIT] ClassificationManager initialized.")
         self.gpt_service = ChatGPTService()
-        # Store all classification messages in one global conversation
-        self.classifier_conversation_history = []
+        # A single global conversation
+        self.classifier_conversation = []
+
+        # Insert a big system prompt with full context at BOT STARTUP
+        full_bot_context = bot_config.get("initial_prompts", {}).get("bot_context", "")
+        if not full_bot_context:
+            full_bot_context = (
+                "No expanded context found in bot_config['initial_prompts']['bot_context'].\n"
+                "Using minimal fallback."
+            )
+        system_prompt = (
+            "You are the classification system for this entire Slackbot session. "
+            "All code or config requests => CODER. If user is asking about the bot's internal design => ASKTHEBOT. "
+            "Otherwise => ASKTHEWORLD. Strictly output JSON => {\"request_type\":\"...\",\"role_info\":\"...\",\"extra_data\":{}}.\n\n"
+            f"{full_bot_context}"
+        )
+        self.classifier_conversation.append({"role": "system", "content": system_prompt})
 
     def handle_classification(self, user_text, user_id, channel, thread_ts):
         """
-        1. Appends the user's message to our persistent classifier conversation.
-        2. Calls GPT with a system prompt explaining the classification scheme:
-           - 'CONFIG_UPDATE' if they're updating something.
-           - 'PRINT_CONFIG' if they want to see config values.
-           - 'ASKTHEWORLD' otherwise (general Q&A).
-        3. GPT should return JSON like:
-           {
-             "request_type": "ASKTHEWORLD" | "CONFIG_UPDATE" | "PRINT_CONFIG",
-             "role_info": "Batman" | "friendly" | "default" | ...
-             "extra_data": {
-               "new_role_prompt": "...",
-               "role_temperature": 0.5,
-               ...
-             }
-           }
-        4. Logs debug info and returns the parsed result.
-        5. Falls back to {"request_type": "ASKTHEWORLD", "role_info": "default", ...}
-           if GPT fails or the JSON is invalid.
+        1) Append user text to the single global conversation.
+        2) Call GPT for classification. 
+        3) If request_type=CODER => forcibly embed the full context in extra_data['bot_knowledge'].
+        4) Return the classification JSON.
         """
         logger.debug(
-            "ClassificationManager.handle_classification called with user_text='%s', "
-            "user_id='%s', channel='%s', thread_ts='%s'",
+            "ClassificationManager.handle_classification => user_text='%s', user_id='%s', channel='%s', thread_ts='%s'",
             user_text, user_id, channel, thread_ts
         )
 
-        # 1) Append the user's latest text to conversation
-        self.classifier_conversation_history.append({"role": "user", "content": user_text})
+        # Step 1: Append user text to the single global conversation
+        self.classifier_conversation.append({"role": "user", "content": user_text})
 
-        # 2) Build a system prompt explaining how GPT must return request_type, role_info, extra_data
-        system_prompt = (
-            "You are a classification system with persistent memory of prior user messages. "
-            "For each new user message, determine if the request is:\n"
-            " - CONFIG_UPDATE (user wants to update or set config/roles),\n"
-            " - PRINT_CONFIG (user wants to see config),\n"
-            " - ASKTHEWORLD (any other request for Q&A).\n\n"
-            "Additionally, if the user references a new role (e.g. 'Batman'), you can provide:\n"
-            "  \"role_info\": \"Batman\",\n"
-            "  and in extra_data, set \"new_role_prompt\" and \"role_temperature\" if you want.\n\n"
-            "You MUST output strictly valid JSON with keys:\n"
-            "  request_type, role_info, extra_data.\n"
-            "If uncertain, default to:\n"
-            "  {\"request_type\": \"ASKTHEWORLD\", \"role_info\": \"default\", \"extra_data\": {}}"
-        )
-
-        # Merge system prompt + conversation
-        conversation = [{"role": "system", "content": system_prompt}] + self.classifier_conversation_history
-
-        # 3) Call GPT for classification
-        logger.debug("Calling GPT classify_chat with conversation: %s", conversation)
-        raw_gpt_response = self.gpt_service.classify_chat(conversation)
+        # Step 2: GPT classification
+        logger.debug("Calling GPT classify_chat with conversation: %s", self.classifier_conversation)
+        raw_gpt_response = self.gpt_service.classify_chat(self.classifier_conversation)
         logger.debug("Classifier GPT raw output: %s", raw_gpt_response)
 
-        # 4) Parse JSON result
         try:
             result = json.loads(raw_gpt_response)
             logger.debug("Parsed classification JSON: %s", result)
 
-            # Minimal structure check
             for key in ["request_type", "role_info", "extra_data"]:
                 if key not in result:
-                    raise ValueError(f"Missing key '{key}' in GPT JSON.")
+                    raise ValueError(f"Missing '{key}' in GPT JSON.")
 
-            # If parse is successful, store GPT's raw response in conversation
-            self.classifier_conversation_history.append({
+            # If request_type=CODER => forcibly embed the same full_bot_context 
+            # from the system prompt. We'll retrieve from the first message's content if needed:
+            if result["request_type"] == "CODER":
+                # The first message in the classifier_conversation is system content:
+                if len(self.classifier_conversation) > 0:
+                    system_content = self.classifier_conversation[0].get("content", "")
+                    # We assume that is our "big context" (though it's not a perfect extraction)
+                    if "bot_knowledge" not in result["extra_data"]:
+                        result["extra_data"]["bot_knowledge"] = system_content
+                    else:
+                        existing = result["extra_data"]["bot_knowledge"]
+                        merged = f"{existing}\n\n[Full Bot Context Below]\n\n{system_content}"
+                        result["extra_data"]["bot_knowledge"] = merged
+
+            # Step 3: Store GPT's final classification in the conversation
+            self.classifier_conversation.append({
                 "role": "assistant",
-                "content": raw_gpt_response
+                "content": json.dumps(result)
             })
 
             return result
 
         except Exception as e:
             logger.error("Failed to parse classification JSON: %s", e, exc_info=True)
-            # Fallback to ASKTHEWORLD
-            fallback_result = {
+            fallback = {
                 "request_type": "ASKTHEWORLD",
                 "role_info": "default",
                 "extra_data": {}
             }
-            self.classifier_conversation_history.append({
+            self.classifier_conversation.append({
                 "role": "assistant",
                 "content": "Error fallback => ASKTHEWORLD"
             })
-            return fallback_result
+            return fallback
