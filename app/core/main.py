@@ -1,7 +1,10 @@
 # project_root/core/main.py
 
 import os
+import logging
 from flask import Flask, jsonify
+
+logging.basicConfig(level=logging.DEBUG)
 
 def create_app():
     from core.bot_engine import BotEngine
