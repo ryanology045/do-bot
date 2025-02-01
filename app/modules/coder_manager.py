@@ -2,13 +2,14 @@
 
 import logging
 from core.module_manager import BaseModule
+from core.configs import bot_config
 from services.chatgpt_service import ChatGPTService
 
 logger = logging.getLogger(__name__)
 
 class CoderManager(BaseModule):
     """
-    For advanced code snippet generation or config changes => CODER GPT.
+    For advanced code snippet generation. Now references coder_system_prompt from config.
     """
 
     module_name = "coder_manager"
@@ -19,17 +20,16 @@ class CoderManager(BaseModule):
         self.gpt_service = ChatGPTService()
 
     def generate_snippet(self, user_requirements):
-        """
-        Interact with GPT in coder capacity, returning a code string.
-        """
         logger.debug("[CODER_MANAGER] generate_snippet => user_requirements='%s'", user_requirements)
-        system_prompt = (
-            "You are a coding-oriented GPT. The user wants a Python code snippet or function. "
-            "Return minimal, valid code. If you need to clarify, you can indicate so. "
-            "Any advanced changes to the bot must reference the existing file structure or config usage."
-        )
+
+        # system prompt from config
+        coder_system_prompt = bot_config["initial_prompts"].get("coder_system_prompt", "")
+        if not coder_system_prompt:
+            logger.warning("[CODER_MANAGER] coder_system_prompt missing, using minimal fallback.")
+            coder_system_prompt = "You are a Python code generator. Return 'generated_snippet' function only."
+
         conversation = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": coder_system_prompt},
             {"role": "user", "content": user_requirements}
         ]
 
@@ -42,10 +42,6 @@ class CoderManager(BaseModule):
         return code_str
 
     def create_snippet_callable(self, code_str):
-        """
-        Convert code_str into a Python callable.
-        Expects function named 'generated_snippet'.
-        """
         logger.debug("[CODER_MANAGER] create_snippet_callable => code_str length=%d", len(code_str))
         local_env = {}
         try:
@@ -56,7 +52,7 @@ class CoderManager(BaseModule):
 
         snippet_callable = local_env.get("generated_snippet")
         if not snippet_callable:
-            logger.warning("[CODER_MANAGER] The snippet code does not define 'generated_snippet'.")
+            logger.warning("[CODER_MANAGER] snippet code does not define 'generated_snippet'.")
         else:
             logger.info("[CODER_MANAGER] snippet_callable created successfully.")
         return snippet_callable
