@@ -10,9 +10,8 @@ logger = logging.getLogger(__name__)
 
 class ClassificationManager(BaseModule):
     """
-    Single global GPT classification session. 
-    If request_type=CODER => we do a second GPT call to 
-    extract only the "relevant" pieces of the bot_context.
+    Single global GPT classification session. If GPT returns partial JSON,
+    we fallback to default role_info='default' or extra_data={}, etc.
     """
 
     module_name = "classification_manager"
@@ -21,7 +20,6 @@ class ClassificationManager(BaseModule):
     def initialize(self):
         logger.info("[INIT] ClassificationManager: single global GPT session.")
         self.gpt_service = ChatGPTService()
-        # Entire classification conversation (for request_type detection)
         self.classifier_conversation = []
 
         # The big bot context from configs
@@ -30,10 +28,9 @@ class ClassificationManager(BaseModule):
             logger.warning("[CLASSIFIER] No 'bot_context' found in config. Using minimal fallback.")
             self.full_bot_context = "No extended context available..."
 
-        # Insert the system prompt with the big context once at startup
         system_prompt = (
             "You are the classification system for the entire Slackbot. "
-            "Decide: ASKTHEWORLD | ASKTHEBOT | CODER. Output strictly valid JSON. \n\n"
+            "Decide among: ASKTHEWORLD, ASKTHEBOT, CODER. Output strictly valid JSON. \n\n"
             f"{self.full_bot_context}"
         )
         self.classifier_conversation.append({"role": "system", "content": system_prompt})
@@ -47,9 +44,9 @@ class ClassificationManager(BaseModule):
 
         # 1) Append user text
         self.classifier_conversation.append({"role": "user", "content": user_text})
-
-        # 2) Classification GPT call
         logger.debug("[CLASSIFIER] classification conversation (pre-call): %s", self.classifier_conversation)
+
+        # 2) GPT classification
         raw_gpt_response = self.gpt_service.classify_chat(self.classifier_conversation)
         logger.debug("[CLASSIFIER] GPT raw output for classification: %s", raw_gpt_response)
 
@@ -57,29 +54,38 @@ class ClassificationManager(BaseModule):
             result = json.loads(raw_gpt_response)
             logger.debug("[CLASSIFIER] Parsed classification JSON: %s", result)
 
-            for key in ["request_type", "role_info", "extra_data"]:
-                if key not in result:
-                    raise ValueError(f"Missing '{key}' in GPT JSON: {raw_gpt_response}")
+            # Gracefully fallback if keys are missing
+            request_type = result.get("request_type", "ASKTHEWORLD")
+            role_info = result.get("role_info", "default")
+            extra_data = result.get("extra_data", {})
 
-            # store classification
+            # If GPT didn't supply them at all, we set them ourselves
+            if "request_type" not in result:
+                logger.warning("[CLASSIFIER] GPT omitted 'request_type'. Defaulting to 'ASKTHEWORLD'")
+            if "role_info" not in result:
+                logger.warning("[CLASSIFIER] GPT omitted 'role_info'. Defaulting to 'default'")
+            if "extra_data" not in result:
+                logger.warning("[CLASSIFIER] GPT omitted 'extra_data'. Using empty {}")
+
+            # Overwrite result dict with safe values
+            result["request_type"] = request_type
+            result["role_info"] = role_info
+            result["extra_data"] = extra_data
+
+            # If request_type=CODER => forcibly embed full_bot_context in extra_data['bot_knowledge']
+            if request_type == "CODER":
+                existing_knowledge = extra_data.get("bot_knowledge", "")
+                merged = f"{existing_knowledge}\n\n[Full Bot Context Below]\n\n{self.full_bot_context}"
+                result["extra_data"]["bot_knowledge"] = merged
+                logger.debug("[CLASSIFIER] Inserted full context snippet for CODER request.")
+
+            # 3) Store final classification in conversation
+            final_json = json.dumps(result)
             self.classifier_conversation.append({
                 "role": "assistant",
-                "content": json.dumps(result)
+                "content": final_json
             })
-
-            # 3) If request_type=CODER => do a second GPT call to extract only relevant snippet from self.full_bot_context
-            if result["request_type"] == "CODER":
-                # We'll do a minimal approach:
-                relevant_context = self._extract_relevant_context(user_text)
-                # Merge with whatever GPT put in extra_data['bot_knowledge']
-                existing_knowledge = result["extra_data"].get("bot_knowledge", "")
-                # Final knowledge
-                merged = f"{existing_knowledge}\n\n[Relevant Bot Context Excerpt Below]\n\n{relevant_context}"
-                # set it
-                result["extra_data"]["bot_knowledge"] = merged
-                logger.debug("[CLASSIFIER] Inserted relevant context snippet for coder request.")
-
-            logger.info("[CLASSIFIER] Final classification => %s", result)
+            logger.info("[CLASSIFIER] Final classification => %s", final_json)
             return result
 
         except Exception as e:
@@ -94,33 +100,3 @@ class ClassificationManager(BaseModule):
                 "content": "Error fallback => ASKTHEWORLD"
             })
             return fallback
-
-    def _extract_relevant_context(self, user_text):
-        """
-        A second GPT call that tries to produce a minimal snippet of self.full_bot_context
-        relevant to user_text. Example approach:
-        1) system prompt: "Given the big context below, only return the lines relevant to user_text."
-        2) user prompt: "context: ... user_text: ..."
-
-        In production, you might do a semantic search or chunk-based approach. This is a naive GPT approach.
-        """
-        logger.debug("[CLASSIFIER] _extract_relevant_context => user_text='%s'", user_text)
-
-        # Build a conversation for the "context extraction" GPT call
-        extraction_prompt = (
-            "You have the following big context about the bot. The user has a code/config request. "
-            "Return ONLY the lines or sections from the context that are directly relevant to the user's request. "
-            "If the user is talking about config, mention the config portion. If about modules, mention that module. "
-            "Keep it minimal—no extra details."
-        )
-
-        extraction_conversation = [
-            {"role": "system", "content": extraction_prompt},
-            {"role": "user", "content": f"BOT CONTEXT:\n{self.full_bot_context}\n\nUSER REQUEST:\n{user_text}"}
-        ]
-
-        raw_response = self.gpt_service.classify_chat(extraction_conversation)
-        logger.debug("[CLASSIFIER] GPT raw output for relevant context extraction: %s", raw_response)
-
-        # We assume GPT returns a snippet. We do no further JSON parse, just take raw text as the snippet.
-        return raw_response
