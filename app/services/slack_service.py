@@ -25,7 +25,7 @@ class SlackService:
                 return "Invalid request signature", 401
 
             event_data = request.json.get("event", {})
-            if event_data.get("type") == "message" and not event_data.get("bot_id"):
+            if (event_data.get("type") in ["message", "app_mention"]) and not event_data.get("bot_id"):
                 self.bot_engine.handle_incoming_slack_event(event_data)
 
             return jsonify({"status": "ok"}), 200
