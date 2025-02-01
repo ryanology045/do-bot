@@ -88,7 +88,7 @@ class BotEngine:
 
     def _handle_config_update(self, extra_data, channel, thread_ts):
         from services.slack_service import SlackService
-        spc = SlackService().slack_post_client
+        spc = SlackService().slack_post_message
 
         updated_something = False
 
@@ -113,5 +113,5 @@ class BotEngine:
 
     def _handle_print_config(self, channel, thread_ts):
         from services.slack_service import SlackService
-        spc = SlackService().slack_post_client
+        spc = SlackService().slack_post_message
         spc.post_message(channel=channel, text=f"Current Bot Config:\n{bot_config}", thread_ts=thread_ts)
