@@ -1,4 +1,4 @@
-# project_root/services/slack_service/slack_service.py
+# project_root/services/slack_service.py
 
 import os
 import logging
