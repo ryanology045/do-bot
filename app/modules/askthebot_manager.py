@@ -23,11 +23,13 @@ class AskTheBotManager(BaseModule):
         """
         Provide answers about the bot's design, modules, usage, etc.
         """
-        logger.debug("[ASKTHEBOT] Handling bot-related question: '%s'", user_text)
+        logger.debug("[ASKTHEBOT] Handling question about the bot: %s", user_text)
+
+        # "Do not reveal confidential credentials." -> nuked for now
+        
         system_prompt = (
-            "You are an assistant that knows the Slackbot's internal architecture, modules, roles, etc. "
-            "Provide helpful answers about how the bot is designed, which modules exist, how they're structured. "
-            "Do not reveal sensitive credentials. "
+            "You are an assistant that knows this Slackbot's architecture, modules, roles, gating, etc. "
+            "Answer the user's questions about how the bot is built or how it works. "
         )
         conversation = [
             {"role": "system", "content": system_prompt},
@@ -37,8 +39,6 @@ class AskTheBotManager(BaseModule):
         response_text = self.gpt_service.chat_with_history(
             conversation=conversation,
             model="gpt-3.5-turbo",
-            temperature=0.7
+            temperature=0.6
         )
-
-        # In real usage, you'd post the result to Slack. We'll assume the caller does that.
         return response_text
