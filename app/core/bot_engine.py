@@ -109,9 +109,9 @@ class BotEngine:
                     updated_something = True
 
         message = "Config update successful!" if updated_something else "No recognized config fields to update."
-        post_message(channel=channel, text=message, thread_ts=thread_ts)
+        slack_service.post_message(channel=channel, text=message, thread_ts=thread_ts)
 
     def _handle_print_config(self, channel, thread_ts):
         from services.slack_service import SlackService
         slack_service = SlackService()
-        post_message(channel=channel, text=f"Current Bot Config:\n{bot_config}", thread_ts=thread_ts)
+        slack_service.post_message(channel=channel, text=f"Current Bot Config:\n{bot_config}", thread_ts=thread_ts)
