@@ -84,6 +84,7 @@ class BotEngine:
             f"Temperature={role_temp}. Please produce code snippet to store this role in code (bot_config)."
         )
         snippet_code = coder_mgr.generate_snippet(coder_input)
+        logger.debug(f"[BOT_ENGINE] Generated snippet:\n{snippet_code}")
         snippet_callable = coder_mgr.create_snippet_callable(snippet_code)
         if snippet_callable:
             from core.snippets import SnippetsRunner
