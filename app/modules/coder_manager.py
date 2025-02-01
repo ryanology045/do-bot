@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 
 class CoderManager(BaseModule):
     """
-    For advanced code snippet generation. Now references coder_system_prompt from config.
+    Owns code-generation rules. The classification manager only passes user text + minimal context.
+    This manager merges them with the coder_system_prompt from config, ensuring correct snippet format.
     """
 
     module_name = "coder_manager"
@@ -21,15 +22,13 @@ class CoderManager(BaseModule):
 
     def generate_snippet(self, user_requirements):
         logger.debug("[CODER_MANAGER] generate_snippet => user_requirements='%s'", user_requirements)
-
-        # system prompt from config
-        coder_system_prompt = bot_config["initial_prompts"].get("coder_system_prompt", "")
-        if not coder_system_prompt:
-            logger.warning("[CODER_MANAGER] coder_system_prompt missing, using minimal fallback.")
-            coder_system_prompt = "You are a Python code generator. Return 'generated_snippet' function only."
+        coder_prompt = bot_config["initial_prompts"].get("coder_system_prompt", "")
+        if not coder_prompt:
+            logger.warning("[CODER_MANAGER] coder_system_prompt missing. Using fallback.")
+            coder_prompt = "You are a Python code generator. Return def generated_snippet(): code."
 
         conversation = [
-            {"role": "system", "content": coder_system_prompt},
+            {"role": "system", "content": coder_prompt},
             {"role": "user", "content": user_requirements}
         ]
 
