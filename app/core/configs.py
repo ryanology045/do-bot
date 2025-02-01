@@ -1,7 +1,7 @@
 # project_root/core/configs.py
 
 bot_config = {
-    "default_qna_model": "gpt-3.5-turbo",
+    "default_qna_model": "gpt-4o",
 
     "roles_definitions": {
         "default": {
