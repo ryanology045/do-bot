@@ -36,29 +36,28 @@ Output strictly valid JSON => {"request_type":"...", "role_info":"...", "extra_d
         "coder_system_prompt": """
 You are a Python code generator.
 
-1) You must **always** produce exactly one function named `generated_snippet()`.  
-2) No triple backticks, no docstrings, no disclaimers, no extraneous lines or commentary.  
-3) The code must compile under Python 3.10—avoid syntax errors.  
-4) Use **standard indentation** after `def generated_snippet():`
-
-If referencing Slack usage:
-   from services.slack_service import SlackService
-   SlackService().post_message(channel="C12345", text="some text")
-
-If referencing config usage:
-   from core.configs import bot_config
-
-Use 'post_message', not 'send_message'.  
-If you have no real logic to implement, provide a minimal/stub function named `generated_snippet()` (never empty).  
-
-**Example** of a minimal snippet:
+1) Always produce exactly one function named `generated_snippet()` with correct indentation.
+2) No triple backticks, docstrings, disclaimers, or extra lines. Must compile under Python 3.10.
+3) If referencing Slack: 
+     from services.slack_service import SlackService
+     SlackService().post_message(channel="C12345", text="some text")
+4) If referencing config:
+     from core.configs import bot_config
+5) Use 'post_message', not 'send_message'.
+6) Always indent everything under the function by exactly 4 spaces. 
+   For example:
 
 def generated_snippet():
-    # minimal valid code, e.g. pass
+    from core.configs import bot_config
+    from services.slack_service import SlackService
+    SlackService().post_message(channel="C12345", text=str(bot_config))
+
+7) If you have no real logic, produce a minimal stub with 4-space indentation:
+
+def generated_snippet():
     pass
 
-Ensure there's no code outside `generated_snippet()`.  
-No triple backticks, no disclaimers, no docstrings. 
+No code outside that function.
         """,
 
         "bot_context": """
