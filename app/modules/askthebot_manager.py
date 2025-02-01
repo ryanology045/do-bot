@@ -8,10 +8,9 @@ logger = logging.getLogger(__name__)
 
 class AskTheBotManager(BaseModule):
     """
-    Handles inquiries ABOUT the bot itself: architecture, roles, design, usage.
-    This is invoked after classification if the user is specifically
-    asking about the bot's internals or how it works.
+    Answers questions about the bot's internal architecture.
     """
+
     module_name = "askthebot_manager"
     module_type = "ASKTHEBOT"
 
@@ -20,16 +19,13 @@ class AskTheBotManager(BaseModule):
         self.gpt_service = ChatGPTService()
 
     def handle_bot_question(self, user_text, user_id, channel, thread_ts):
-        """
-        Provide answers about the bot's design, modules, usage, etc.
-        """
-        logger.debug("[ASKTHEBOT] Handling question about the bot: %s", user_text)
+        logger.debug("[ASKTHEBOT] handle_bot_question => user_text='%s', user_id='%s', channel='%s', thread_ts='%s'",
+                     user_text, user_id, channel, thread_ts)
 
-        # "Do not reveal confidential credentials." -> nuked for now
-        
         system_prompt = (
-            "You are an assistant that knows this Slackbot's architecture, modules, roles, gating, etc. "
-            "Answer the user's questions about how the bot is built or how it works. "
+            "You are an assistant that knows the Slackbot's internal modules, file structure, and usage. "
+            "Provide helpful answers about the bot's design, referencing code or config if needed. "
+            "Don't reveal sensitive credentials."
         )
         conversation = [
             {"role": "system", "content": system_prompt},
@@ -41,4 +37,5 @@ class AskTheBotManager(BaseModule):
             model="gpt-3.5-turbo",
             temperature=0.6
         )
+        logger.info("[ASKTHEBOT] Generated response for architecture Q: %s", response_text[:100] + "...")
         return response_text
