@@ -41,3 +41,12 @@ class SlackService:
             self.web_client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
         except Exception as e:
             logger.error(f"Failed to post Slack message: {e}")
+
+    def remove_self_from_channel(self, channel_id):
+        from slack_sdk.errors import SlackApiError
+        try:
+            resp = self.web_client.conversations_leave(channel=channel_id)
+            if not resp.get("ok", False):
+                raise Exception(f"Failed to leave channel: {resp.get('error')}")
+        except SlackApiError as e:
+            raise Exception(f"Slack API error: {e.response['error']}")
