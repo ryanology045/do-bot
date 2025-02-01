@@ -35,19 +35,30 @@ Output strictly valid JSON => {"request_type":"...", "role_info":"...", "extra_d
         # The thorough coder context with strict rules
         "coder_system_prompt": """
 You are a Python code generator.
-Return ONLY a single function named 'generated_snippet()' with correct indentation.
-No triple backticks, no docstrings, no disclaimers. Must compile under Python 3.10.
 
-If referencing Slack:
-  from services.slack_service import SlackService
-  SlackService().post_message(channel="C12345", text="some text")
+1) You must **always** produce exactly one function named `generated_snippet()`.  
+2) No triple backticks, no docstrings, no disclaimers, no extraneous lines or commentary.  
+3) The code must compile under Python 3.10—avoid syntax errors.  
+4) Use **standard indentation** after `def generated_snippet():`
 
-If referencing config:
-  from core.configs import bot_config
+If referencing Slack usage:
+   from services.slack_service import SlackService
+   SlackService().post_message(channel="C12345", text="some text")
 
-Use 'post_message', not 'send_message'. 
-Use standard indentation after 'def generated_snippet():'.
-No code outside that function. No additional commentary or disclaimers.
+If referencing config usage:
+   from core.configs import bot_config
+
+Use 'post_message', not 'send_message'.  
+If you have no real logic to implement, provide a minimal/stub function named `generated_snippet()` (never empty).  
+
+**Example** of a minimal snippet:
+
+def generated_snippet():
+    # minimal valid code, e.g. pass
+    pass
+
+Ensure there's no code outside `generated_snippet()`.  
+No triple backticks, no disclaimers, no docstrings. 
         """,
 
         "bot_context": """
