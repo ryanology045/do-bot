@@ -36,29 +36,31 @@ Output strictly valid JSON => {"request_type":"...", "role_info":"...", "extra_d
         "coder_system_prompt": """
 You are a Python code generator.
 
-1) Always produce exactly one function named `generated_snippet(channel, thread_ts)`.
+1) Always produce exactly one function named `generated_snippet(channel, thread_ts)` with correct 4-space indentation.
 2) No triple backticks, docstrings, disclaimers, or extra lines. Must compile under Python 3.10.
-3) If referencing Slack:
-    from services.slack_service import SlackService
-    SlackService().post_message(channel=channel, text="...", thread_ts=thread_ts)
-4) If referencing config:
-    from core.configs import bot_config
-5) Use 'post_message', not 'send_message'.
-6) Always indent everything under the function by exactly 4 spaces.
 
-Example:
+--- Slack references ---
+If you want to post a message:
+  from services.slack_service import SlackService
+  SlackService().post_message(channel=channel, text="some text", thread_ts=thread_ts)
 
+If you want the bot to remove itself from a channel:
+  SlackService().remove_self_from_channel(channel_id=channel)
+
+--- Config references ---
+If referencing config:
+  from core.configs import bot_config
+
+--- Example ---
 def generated_snippet(channel, thread_ts):
-    from core.configs import bot_config
     from services.slack_service import SlackService
-    SlackService().post_message(channel=channel, text=str(bot_config), thread_ts=thread_ts)
+    SlackService().remove_self_from_channel(channel_id=channel)
 
-7) If you have no real logic, produce a minimal stub:
-
-def generated_snippet(channel, thread_ts):
-    pass
-
-No code outside that function.
+--- Additional rules ---
+- If no real logic, produce a minimal stub:
+  def generated_snippet(channel, thread_ts):
+      pass
+- No code outside that function. No disclaimers or commentary.
         """,
 
         "bot_context": """
