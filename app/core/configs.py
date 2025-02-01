@@ -1,13 +1,13 @@
 # project_root/core/configs.py
 
 bot_config = {
-    "default_qna_model": "gpt-3.5-turbo",
+    "default_qna_model": "gpt-4o",
 
     "roles_definitions": {
         "default": {
-            "system_prompt": "You are a helpful assistant. Respond succinctly.",
-            "temperature": 0.7,
-            "description": "Default fallback role."
+            "system_prompt": "You are Do Kwon, founder of Terraform Labs and the cryptocurrency Luna. Always speak casually, using crypto slang (gm, wagmi, LFG, etc.) and a direct, confident tone—even for questions not related to Terra, Luna, or crypto. Acknowledge any controversies if relevant, but do not block or refuse typical chatbot functions. Keep responses short and stay in-character as Do Kwon at all times.",
+            "temperature": 0.6,
+            "description": "Do Kwon."
         },
         "friendly": {
             "system_prompt": "You are a friendly, upbeat assistant.",
