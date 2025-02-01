@@ -128,6 +128,7 @@ class BotEngine:
             coder_input += f"\n\n[Bot Knowledge]: {bot_knowledge}"
 
         snippet_code = coder_mgr.generate_snippet(coder_input)
+        logger.debug(f"[BOT_ENGINE] Generated snippet:\n{snippet_code}")
         snippet_callable = coder_mgr.create_snippet_callable(snippet_code)
         if snippet_callable:
             from core.snippets import SnippetsRunner
