@@ -114,6 +114,14 @@ class BotEngine:
 
     def _handle_coder_flow(self, user_text, channel, thread_ts, extra_data):
         logger.debug("[BOT_ENGINE] CODER flow => user_text='%s', extra_data=%s", user_text, extra_data)
+
+        # 1) Check if user specifically requested a different channel or no thread
+        override_channel = extra_data.get("override_channel")  # e.g. "#random"
+        override_thread  = extra_data.get("override_thread")   # e.g. None
+
+        final_channel = override_channel if override_channel else channel
+        final_thread  = override_thread if override_thread else thread_ts
+        
         coder_mgr = self.module_manager.get_module("coder_manager")
         if not coder_mgr:
             logger.error("[BOT_ENGINE] coder_manager not found.")
@@ -133,7 +141,7 @@ class BotEngine:
         if snippet_callable:
             from core.snippets import SnippetsRunner
             sr = SnippetsRunner()
-            sr.run_snippet_now(snippet_callable)
+            sr.run_snippet_now(snippet_callable, final_channel, final_thread)
             logger.info("[BOT_ENGINE] Code snippet executed successfully for request: %s", user_text)
             slack_service.post_message(channel=channel, text="Code snippet executed successfully.", thread_ts=thread_ts)
         else:
