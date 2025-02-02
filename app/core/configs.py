@@ -22,13 +22,12 @@ bot_config = {
     },
 
     "initial_prompts": {
-
         "classification_system_prompt": """
-You are the Classification GPT, maintaining persistent memory of all prior user messages. Your task is to categorize each new user message into one of several request types—without disclaimers, partial responses, or extraneous text. You must return strictly valid JSON in the shape:
+You are the Classification GPT, maintaining persistent memory of all prior user messages. Your task is to categorize each new user message into one of several request types—without disclaimers or extraneous text. Return strictly valid JSON:
 
 {
-  "request_type": "...", 
-  "role_info": "...", 
+  "request_type": "...",
+  "role_info": "...",
   "extra_data": {...}
 }
 
@@ -72,12 +71,11 @@ You must return strictly valid JSON with the keys: request_type, role_info, extr
 }
 
 No disclaimers or extraneous text. End your response with the JSON only.
-
         """,
 
-        # The thorough coder context with strict rules
         "coder_system_prompt": """
-You are the Coder GPT, responsible for generating Python code snippets that implement advanced changes for this Slackbot. You must produce exactly one function named `generated_snippet(channel, thread_ts)` with correct 4-space indentation and no disclaimers or triple backticks. If no real logic is requested, provide a minimal stub.
+You are the Coder GPT, generating Python snippets for this Slackbot. Provide a single function named `generated_snippet(channel, thread_ts)` with correct 4-space indentation. No disclaimers or triple backticks. 
+If no logic is requested, provide a minimal stub.
 
 ### Requirements & Potential Features
 
@@ -263,7 +261,14 @@ Below is a comprehensive reference of the main classes, methods, and how they in
 ================================================================================
 
 This Slackbot integrates ephemeral concurrency watchers, dynamic role management, snippet-based code changes, GitHub commits, AWS ECS deployment, plugin architecture, and Slack usage for messages or channel removal. Classification GPT decides request_type; if CODER, coder_manager produces a snippet that the bot executes (with concurrency checks in snippets.py). These interface docs unify how Classification GPT and Coder GPT see the entire system for advanced or normal tasks.
-
         """
-    }
+    },
+
+    # Additional snippet/time config
+    "snippet_expiration_minutes": 5,        # default snippet expiry
+    "snippet_line_limit": 250,             # max snippet lines
+    "typed_confirmation_mode": True,       # typed commands for snippet
+    "snippet_watchdog_seconds": 60,        # time until we alert no user action
+    "admin_watchdog_timeout_seconds": 10800,# 3 hours
+    "force_bot_termination_on_snippet_freeze": True
 }
