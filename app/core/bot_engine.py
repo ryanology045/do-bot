@@ -53,53 +53,6 @@ class BotEngine:
         else:
             self._handle_asktheworld_flow(user_text, role_info, extra_data, channel, thread_ts)
 
-    def _maybe_register_new_role(self, role_info, extra_data, user_text, channel, thread_ts):
-        """
-        If GPT invented a new role, store it in bot_config. 
-        Then optionally run coder snippet to 'persist' that code. 
-        """
-        roles_def = bot_config["roles_definitions"]
-        if role_info not in roles_def:
-            new_prompt = extra_data.get("new_role_prompt")
-            new_temp = extra_data.get("role_temperature")
-            if new_prompt:
-                logger.info("[BOT_ENGINE] GPT invented new role '%s'. Storing in memory & possibly persisting via snippet.",
-                            role_info)
-                roles_def[role_info] = {
-                    "system_prompt": new_prompt,
-                    "temperature": new_temp if new_temp is not None else 0.7,
-                    "description": f"Dynamically created role: {role_info}"
-                }
-                self._run_new_role_snippet(role_info, new_prompt, new_temp, user_text, channel, thread_ts)
-
-    def _run_new_role_snippet(self, role_name, role_prompt, role_temp, user_text, channel, thread_ts):
-        logger.debug("[BOT_ENGINE] Running snippet to persist new role '%s' with prompt:\n%s", role_name, role_prompt)
-        coder_mgr = self.module_manager.get_module("coder_manager")
-        if not coder_mgr:
-            logger.warning("[BOT_ENGINE] coder_manager not found, cannot persist new role in code.")
-            return
-
-        coder_input = (
-            f"The user created new role '{role_name}' with system_prompt:\n{role_prompt}\n"
-            f"Temperature={role_temp}. Please produce code snippet to store this role in code (bot_config)."
-        )
-        snippet_code = coder_mgr.generate_snippet(coder_input)
-        logger.debug(f"[BOT_ENGINE] Generated snippet:\n{snippet_code}")
-        snippet_callable = coder_mgr.create_snippet_callable(snippet_code)
-        if snippet_callable:
-            from core.snippets import SnippetsRunner
-            sr = SnippetsRunner()
-            sr.run_snippet_now(snippet_callable)
-            logger.info("[BOT_ENGINE] New role snippet executed successfully.")
-            from services.slack_service import SlackService
-            SlackService().post_message(
-                channel=channel,
-                text=f"New role '{role_name}' snippet executed for code persistence.",
-                thread_ts=thread_ts
-            )
-        else:
-            logger.error("[BOT_ENGINE] Failed to create snippet callable for new role '%s'.", role_name)
-
     def _handle_askthebot(self, user_text, user_id, channel, thread_ts):
         logger.debug("[BOT_ENGINE] Handling ASKTHEBOT for user_text='%s'", user_text)
         askbot_module = self.module_manager.get_module("askthebot_manager")
