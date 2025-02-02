@@ -33,36 +33,47 @@ class BotEngine:
 
         # 1) snippet_manager typed command
         snippet_result = self.snippet_manager.handle_typed_command(user_text, user_id, channel, thread_ts)
-        if snippet_result:
-            if snippet_result.get("action") == "execute_snippet":
-                # Now we do the actual snippet run
-                snippet_entry = snippet_result["snippet"]
-                code_str = snippet_entry["code"]
-                snippet_channel = snippet_entry["channel"]
-                snippet_thread = snippet_entry["thread_ts"]
+        if snippet_result and snippet_result.get("action") == "execute_snippet":
+            snippet_id = snippet_result["snippet_id"]
 
-                # call coder_manager
-                coder_mgr = self.module_manager.get_module("coder_manager")
-                snippet_callable = coder_mgr.create_snippet_callable(code_str)
-                if snippet_callable:
-                    from core.snippets import SnippetsRunner
-                    runner = SnippetsRunner()
-                    runner.run_snippet_now(snippet_callable, snippet_channel, snippet_thread)
-                    SlackService().post_message(
-                        channel=snippet_channel,
-                        text="Snippet executed successfully!",
-                        thread_ts=snippet_thread
-                    )
-                    logger.info("[BOT_ENGINE] Snippet executed => '%s'", snippet_entry["user_request"])
-                else:
-                    SlackService().post_message(
-                        channel=snippet_channel,
-                        text="Failed to create snippet callable.",
-                        thread_ts=snippet_thread
-                    )
-                    logger.error("[BOT_ENGINE] snippet callable creation failed => '%s'", snippet_entry["user_request"])
+            # we still have snippet_manager snippet_storage
+            # or a snippet_manager method to fetch it
+            from modules.snippet_manager import snippet_storage
+            entry = snippet_storage.get(snippet_id)
+            if not entry:
+                return  # weird edge case
 
-            # If snippet_result was 'cancel' or 'extend', there's no more to do. So return.
+            code_str = entry["code"]
+            snippet_channel = entry["channel"]
+            snippet_thread = entry["thread_ts"]
+
+            # call coder_manager => snippet_callable
+            coder_mgr = self.module_manager.get_module("coder_manager")
+            snippet_callable = coder_mgr.create_snippet_callable(code_str)
+
+            if snippet_callable:
+                from core.snippets import SnippetsRunner
+                runner = SnippetsRunner()
+
+                # block until snippet returns or crashes
+                runner.run_snippet_now(snippet_callable, snippet_channel, snippet_thread)
+
+                # once it returns, remove from snippet_storage
+                snippet_storage.pop(snippet_id, None)
+
+                SlackService().post_message(
+                    channel=snippet_channel,
+                    text="Snippet executed successfully!",
+                    thread_ts=snippet_thread
+                )
+                logger.info("[BOT_ENGINE] Snippet executed => '%s'", entry["user_request"])
+            else:
+                SlackService().post_message(
+                    channel=snippet_channel,
+                    text="Failed to create snippet callable.",
+                    thread_ts=snippet_thread
+                )
+                logger.error("[BOT_ENGINE] snippet callable creation failed => '%s'", entry["user_request"])
             return
 
         # 2) Otherwise classification
