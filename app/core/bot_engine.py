@@ -136,3 +136,10 @@ class BotEngine:
             channel=channel,
             thread_ts=thread_ts
         )
+
+    def has_pending_snippet(self, channel, thread_ts):
+        """
+        Return True if snippet_manager has a snippet in this channel/thread 
+        with final_decision=None.
+        """
+        return self.snippet_manager.has_pending_snippet_in(channel, thread_ts)
