@@ -1,17 +1,20 @@
 # project_root/core/bot_engine.py
 
 import logging
-import uuid, time, threading
-from services.slack_service import SlackService
+import uuid
+import time
+import threading
 from datetime import datetime, timedelta
+
 from .configs import bot_config
 from .module_manager import ModuleManager
 from modules.coder_manager import CoderManager
 from core.snippets import SnippetsRunner
+from services.slack_service import SlackService
 
 logger = logging.getLogger(__name__)
 
-snippet_storage = {}
+snippet_storage = {}  # snippet_id -> { "code", "summary", "channel", "thread_ts", "expires_at", "user_request", "initial_role_info" }
 
 class BotEngine:
     """
@@ -20,6 +23,10 @@ class BotEngine:
       - CODER => advanced code or config logic in coder_manager
       - ASKTHEBOT => architecture Qs => askthebot_manager
       - else => normal Q&A => asktheworld_manager
+
+    Now includes:
+      - A second GPT "sanity check" summarizing generated snippet code
+      - An ephemeral confirmation flow with snippet expiration
     """
 
     def __init__(self):
@@ -28,27 +35,40 @@ class BotEngine:
         self.module_manager.load_modules()
         self.personality_manager = self.module_manager.get_module("personality_manager")
 
+        # OPTIONAL: start a background thread to clean up expired snippets:
+        threading.Thread(target=self._cleanup_expired_snippets, daemon=True).start()
+
     def handle_incoming_slack_event(self, event_data):
         user_text = event_data.get("text", "")
         channel = event_data.get("channel")
         thread_ts = event_data.get("thread_ts") or event_data.get("ts")
         user_id = event_data.get("user")
 
-        logger.debug("[BOT_ENGINE] Slack event => text='%s', user='%s', channel='%s', thread_ts='%s'",
-                     user_text, user_id, channel, thread_ts)
+        logger.debug(
+            "[BOT_ENGINE] Slack event => text='%s', user='%s', channel='%s', thread_ts='%s'",
+            user_text, user_id, channel, thread_ts
+        )
 
         classifier = self.module_manager.get_module_by_type("CLASSIFIER")
         if not classifier:
             logger.error("[BOT_ENGINE] classification_manager not found.")
             return
 
-        classification_result = classifier.handle_classification(user_text, user_id, channel, thread_ts)
+        classification_result = classifier.handle_classification(
+            user_text, user_id, channel, thread_ts
+        )
         request_type = classification_result.get("request_type", "ASKTHEWORLD")
         role_info = classification_result.get("role_info", "default")
         extra_data = classification_result.get("extra_data", {})
 
-        logger.info("[BOT_ENGINE] classification => request_type=%s, role=%s, extra_data=%s",
-                    request_type, role_info, extra_data)
+        logger.info(
+            "[BOT_ENGINE] classification => request_type=%s, role=%s, extra_data=%s",
+            request_type, role_info, extra_data
+        )
+
+        # Store user_id in extra_data so we have a consistent approach
+        if "user_id" not in extra_data:
+            extra_data["user_id"] = user_id
 
         if request_type == "ASKTHEBOT":
             self._handle_askthebot(user_text, user_id, channel, thread_ts)
@@ -65,8 +85,6 @@ class BotEngine:
             return
 
         response_text = askbot_module.handle_bot_question(user_text, user_id, channel, thread_ts)
-
-        from services.slack_service import SlackService
         SlackService().post_message(channel=channel, text=response_text, thread_ts=thread_ts)
 
     def _handle_coder_flow(self, user_text, channel, thread_ts, extra_data):
@@ -83,20 +101,18 @@ class BotEngine:
         """
         logger.debug("[BOT_ENGINE] CODER flow => user_text='%s', extra_data=%s", user_text, extra_data)
 
-        # 1) Check if user specifically requested a different channel or no thread
+        # Check if user specifically requested a different channel/thread
         override_channel = extra_data.get("override_channel")  # e.g. "#random"
-        override_thread  = extra_data.get("override_thread")   # e.g. None
+        override_thread = extra_data.get("override_thread")
 
         final_channel = override_channel if override_channel else channel
-        final_thread  = override_thread if override_thread else thread_ts
+        final_thread = override_thread if override_thread else thread_ts
 
-        # 1) Generate snippet code
         coder_mgr = self.module_manager.get_module("coder_manager")
         if not coder_mgr:
             logger.error("[BOT_ENGINE] coder_manager not found.")
             return
 
-        from services.slack_service import SlackService
         slack_service = SlackService()
 
         bot_knowledge = extra_data.get("bot_knowledge", "")
@@ -104,30 +120,27 @@ class BotEngine:
         if bot_knowledge:
             coder_input += f"\n\n[Bot Knowledge]: {bot_knowledge}"
 
+        # Generate snippet code
         snippet_code = coder_mgr.generate_snippet(coder_input)
         logger.debug(f"[BOT_ENGINE] Generated snippet:\n{snippet_code}")
 
-        # 2) Second GPT pass: "Sanity check" that interprets the snippet
-        # We'll do a quick classification-like call to get a summary.
-        # This is optional if the snippet is short, but here's how you'd do it:
-
+        # Second GPT pass: "sanity check"
         summary_prompt = (
             "You are a snippet reviewer. Summarize in plain language what the following Python code does. "
             "Focus on potential destructive actions or changes. Return a short bullet-list or paragraph. "
             "No disclaimers, just the summary.\n\n"
             f"```python\n{snippet_code}\n```"
         )
-        # We'll reuse coder_manager or classification_manager for a short call:
-        # For brevity, let's pretend coder_mgr can do a 'review_snippet' call:
         snippet_summary = coder_mgr.review_snippet(summary_prompt)
 
-        # The classification's initial interpretation, e.g. "role=coder_manager" or whatever:
         initial_role_info = extra_data.get("role_info", "N/A")
 
-        # 3) Store snippet in snippet_storage with expiration
-        snippet_id = str(uuid.uuid4())
+        # Parameterize default snippet expiration:
+        expiration_minutes = bot_config.get("snippet_expiration_minutes", 5)
         now = datetime.utcnow()
-        expires_at = now + timedelta(minutes=5)  # 5-min default expiry
+        expires_at = now + timedelta(minutes=expiration_minutes)
+
+        snippet_id = str(uuid.uuid4())
         snippet_storage[snippet_id] = {
             "code": snippet_code,
             "summary": snippet_summary,
@@ -138,13 +151,8 @@ class BotEngine:
             "initial_role_info": initial_role_info
         }
 
-        # 4) Show ephemeral Slack message with all info + confirm/cancel/extend
-        # We'll show the user:
-        # - The classifier's initial interpretation
-        # - The raw snippet code
-        # - The second pass summary
-        # - The user request
-        # - Buttons: Confirm, Extend, Cancel
+        # Distinguish ephemeral vs public confirm (optional):
+        confirm_style = extra_data.get("confirm_style", "ephemeral")  # "ephemeral" or "public"
 
         ephemeral_text = (
             f"*Classifier's initial interpretation (role_info)*: {initial_role_info}\n"
@@ -153,18 +161,25 @@ class BotEngine:
             f"```python\n{snippet_code[:1000]}...\n```\n\n"
             "*--- Second GPT pass summary ---*\n"
             f"{snippet_summary}\n\n"
-            "*Recommended considerations*: If it matches your intent, confirm. Otherwise, extend or cancel."
+            "*Recommended considerations*: If it matches your intent, confirm. Otherwise, extend or cancel. "
+            f"(Expires in {expiration_minutes} minute(s).)"
         )
 
-        SlackService().post_interactive_confirm(
-            snippet_id=snippet_id,
-            ephemeral_text=ephemeral_text,
-            channel=channel,
-            user=extra_data.get("user_id"),  # or user from event_data
-        )
-
-    # Suppose SlackService has a method to post ephemeral with confirm/extend/cancel buttons
-    # We'll have an interactive endpoint to handle button clicks.
+        if confirm_style == "public":
+            # If user wants a public confirm message:
+            slack_service.post_message(
+                channel=final_channel,
+                text=ephemeral_text
+            )
+            # You could provide an interactive approach for public usage, but ephemeral is typical
+        else:
+            # ephemeral usage is typical
+            slack_service.post_interactive_confirm(
+                snippet_id=snippet_id,
+                ephemeral_text=ephemeral_text,
+                channel=final_channel,
+                user=extra_data["user_id"]
+            )
 
     def handle_interactive_confirm_action(self, snippet_id, action_value, user_id):
         """
@@ -176,19 +191,23 @@ class BotEngine:
         if snippet_id not in snippet_storage:
             # Already expired or used
             SlackService().post_ephemeral(
-                channel=some_channel, user=user_id,
+                channel="",
+                user=user_id,
                 text="Snippet not found (maybe expired)."
             )
             return
 
         entry = snippet_storage[snippet_id]
         code_str = entry["code"]
+        snippet_channel = entry["channel"]
+        snippet_thread = entry["thread_ts"]
+        user_req = entry["user_request"]
         now = datetime.utcnow()
 
         if now > entry["expires_at"]:
-            # snippet expired
             SlackService().post_ephemeral(
-                channel=entry["channel"], user=user_id,
+                channel=snippet_channel,
+                user=user_id,
                 text="Snippet expired. No changes made."
             )
             snippet_storage.pop(snippet_id, None)
@@ -196,65 +215,67 @@ class BotEngine:
 
         if action_value == "confirm":
             # Confirm => run the snippet
-            snippet_storage.pop(snippet_id, None)  # remove from store
+            snippet_storage.pop(snippet_id, None)
             snippet_callable = self.module_manager.get_module("coder_manager").create_snippet_callable(code_str)
             if snippet_callable:
-                from core.snippets import SnippetsRunner
                 sr = SnippetsRunner()
-                sr.run_snippet_now(snippet_callable, final_channel, final_thread)
-                logger.info("[BOT_ENGINE] Code snippet executed successfully for request: %s", user_text)
+                sr.run_snippet_now(snippet_callable, snippet_channel, snippet_thread)
+                logger.info("[BOT_ENGINE] Code snippet executed successfully for request: %s", user_req)
                 SlackService().post_ephemeral(
-                    channel=entry["channel"], user=user_id,
+                    channel=snippet_channel, user=user_id,
                     text="Snippet executed successfully!"
                 )
             else:
-                logger.error("[BOT_ENGINE] Failed to generate snippet code from user_text='%s'", user_text)
+                logger.error("[BOT_ENGINE] Failed to create snippet callable from request='%s'", user_req)
                 SlackService().post_ephemeral(
-                    channel=channel, user=user_id,
+                    channel=snippet_channel, user=user_id,
                     text="Failed to create snippet callable."
                 )
 
         elif action_value == "extend":
-            # Extend the expiration by e.g. 5 more minutes
             new_expires = entry["expires_at"] + timedelta(minutes=5)
             entry["expires_at"] = new_expires
             SlackService().post_ephemeral(
-                channel=entry["channel"], user=user_id,
+                channel=snippet_channel, user=user_id,
                 text=f"Snippet expiration extended to {new_expires} UTC."
             )
 
         elif action_value == "cancel":
-            # Cancel => remove snippet
             snippet_storage.pop(snippet_id, None)
             SlackService().post_ephemeral(
-                channel=entry["channel"], user=user_id,
+                channel=snippet_channel, user=user_id,
                 text="Snippet canceled. No changes made."
             )
 
-    # Finally, you might have a background thread or a scheduler that periodically
-    # checks snippet_storage for entries whose expires_at < now, removing them.
-    # E.g. once every minute. Or you do the check upon any new action. The user
-    # can also do "extend" to push out the expiration.
+    def _handle_asktheworld_flow(self, user_text, role_info, extra_data, channel, thread_ts):
+        logger.debug("[BOT_ENGINE] ASKTHEWORLD flow => user_text='%s', role_info='%s'", user_text, role_info)
+        asktheworld_module = self.module_manager.get_module_by_type("ASKTHEWORLD")
+        if not asktheworld_module:
+            logger.error("[BOT_ENGINE] asktheworld_manager not found.")
+            return
 
-    # This is the high-level approach to a second GPT pass check, ephemeral user
-    # prompt with confirm/extend/cancel, and an expiration mechanism.
+        role_temp = extra_data.get("role_temperature")
+        system_prompt, default_temp = self.personality_manager.get_system_prompt_and_temp(role_info)
+        temperature = role_temp if role_temp is not None else default_temp
 
-        def _handle_asktheworld_flow(self, user_text, role_info, extra_data, channel, thread_ts):
-            logger.debug("[BOT_ENGINE] ASKTHEWORLD flow => user_text='%s', role_info='%s'", user_text, role_info)
-            asktheworld_module = self.module_manager.get_module_by_type("ASKTHEWORLD")
-            if not asktheworld_module:
-                logger.error("[BOT_ENGINE] asktheworld_manager not found.")
-                return
+        asktheworld_module.handle_inquiry(
+            user_text=user_text,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            user_id=None,
+            channel=channel,
+            thread_ts=thread_ts
+        )
 
-            role_temp = extra_data.get("role_temperature")
-            system_prompt, default_temp = self.personality_manager.get_system_prompt_and_temp(role_info)
-            temperature = role_temp if role_temp is not None else default_temp
-
-            asktheworld_module.handle_inquiry(
-                user_text=user_text,
-                system_prompt=system_prompt,
-                temperature=temperature,
-                user_id=None,
-                channel=channel,
-                thread_ts=thread_ts
-            )
+    def _cleanup_expired_snippets(self):
+        """
+        Periodically checks snippet_storage for expired entries and removes them.
+        This runs in a background thread, so it doesn't block the main Slack event loop.
+        """
+        while True:
+            now = datetime.utcnow()
+            # Make a copy of items to avoid runtime dict change error
+            for sid, entry in list(snippet_storage.items()):
+                if now > entry["expires_at"]:
+                    snippet_storage.pop(sid, None)
+            time.sleep(30)  # check every 30 seconds
