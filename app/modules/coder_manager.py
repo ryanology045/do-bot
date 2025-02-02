@@ -51,3 +51,19 @@ class CoderManager(BaseModule):
         else:
             logger.info("[CODER_MANAGER] snippet_callable created successfully.")
         return snippet_callable
+
+    def review_snippet(self, snippet_text):
+        """
+        Reuses GPT to provide a short summary or 'sanity check' of the snippet code.
+        """
+        # Could be a small chat or classification call
+        logger.debug("[CODER_MANAGER] review_snippet => snippet_text length=%d", len(snippet_text))
+
+        # For simplicity, we do a single message call
+        response = self.gpt_service.classify_chat([
+            {"role": "system", "content": "You are a snippet reviewer. Summarize what the code does."},
+            {"role": "user", "content": snippet_text}
+        ])
+        # 'classify_chat' or 'chat_with_history' depends on your chatgpt_service
+        logger.debug("[CODER_MANAGER] Snippet review output: %s", response)
+        return response
