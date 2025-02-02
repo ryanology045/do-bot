@@ -9,6 +9,14 @@ from slack_sdk.signature import SignatureVerifier
 logger = logging.getLogger(__name__)
 
 class SlackService:
+    """
+    Pure Slack interface:
+      - register_routes
+      - post_message
+      - remove_self_from_channel
+    No snippet-specific or advanced domain logic.
+    """
+
     def __init__(self, bot_engine=None):
         self.bot_engine = bot_engine
         self.signing_secret = os.environ.get("SLACK_SIGNING_SECRET", "")
@@ -25,7 +33,7 @@ class SlackService:
                 return "Invalid request signature", 401
 
             event_data = request.json.get("event", {})
-            if (event_data.get("type") in ["message", "app_mention"]) and not event_data.get("bot_id"):
+            if (event_data.get("type") in ["message","app_mention"]) and not event_data.get("bot_id"):
                 self.bot_engine.handle_incoming_slack_event(event_data)
 
             return jsonify({"status": "ok"}), 200
@@ -35,7 +43,7 @@ class SlackService:
         signature = req.headers.get("X-Slack-Signature", "")
         body = req.get_data(as_text=True)
         return self.signature_verifier.is_valid(body, timestamp, signature)
-    
+
     def post_message(self, channel, text, thread_ts=None):
         try:
             self.web_client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
