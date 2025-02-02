@@ -22,6 +22,66 @@ class BotEngine:
         self.classifier_manager = self.module_manager.get_module("classification_manager")
         self.snippet_manager = self.module_manager.get_module("snippet_manager")
 
+    """
+
+
+    logger.debug("[BOT_ENGINE] Slack event => text='%s', user='%s', ch='%s', thread_ts='%s'",
+                 user_text, user_id, channel, thread_ts)
+
+    # 1) If a snippet is pending in this thread,
+    #    let snippet_manager handle commands; ignore any other text.
+    if self.has_pending_snippet(channel, thread_ts):
+        snippet_result = self.snippet_manager.handle_typed_command(user_text, user_id, channel, thread_ts)
+        if snippet_result:
+            # If there's a snippet_result => maybe "confirm", so run snippet
+            if snippet_result.get("action") == "execute_snippet":
+                snippet_id = snippet_result["snippet_id"]
+                from modules.snippet_manager import snippet_storage
+                entry = snippet_storage.get(snippet_id, None)
+                if not entry:
+                    return  # snippet missing?
+
+                code_str = entry["code"]
+                snippet_channel = entry["channel"]
+                snippet_thread = entry["thread_ts"]
+
+                coder_mgr = self.module_manager.get_module("coder_manager")
+                snippet_callable = coder_mgr.create_snippet_callable(code_str)
+                if snippet_callable:
+                    from core.snippets import SnippetsRunner
+                    runner = SnippetsRunner()
+                    runner.run_snippet_now(snippet_callable, snippet_channel, snippet_thread)
+                    # Once done, remove snippet
+                    snippet_storage.pop(snippet_id, None)
+
+                    SlackService().post_message(
+                        channel=snippet_channel,
+                        text="Snippet executed successfully!",
+                        thread_ts=snippet_thread
+                    )
+                    logger.info("[BOT_ENGINE] Snippet executed => '%s'", entry["user_request"])
+                else:
+                    SlackService().post_message(
+                        channel=snippet_channel,
+                        text="Failed to create snippet callable.",
+                        thread_ts=snippet_thread
+                    )
+                    logger.error("[BOT_ENGINE] snippet callable creation failed => '%s'", entry["user_request"])
+            # If snippet_result is None or "cancel"/"extend", do nothing more
+        else:
+            # A snippet is pending, but user typed something that isn't confirm/cancel/extend
+            # => do nothing (skip classification)
+            pass
+
+        return  # we do NOT continue to classification if snippet is pending
+
+    # 2) If no snippet is pending in this thread => classification
+    classification = self.classifier_manager.handle_classification(user_text, user_id, channel, thread_ts)
+    ...
+    # handle normal flows (ASKTHEBOT, CODER, ASKTHEWORLD)
+
+    """
+    
     def handle_incoming_slack_event(self, event_data):
         user_text = event_data.get("text","")
         channel  = event_data.get("channel")
@@ -33,50 +93,50 @@ class BotEngine:
 
         # 1) snippet_manager typed command
         snippet_result = self.snippet_manager.handle_typed_command(user_text, user_id, channel, thread_ts)
-        if snippet_result and snippet_result.get("action") == "execute_snippet":
-            snippet_id = snippet_result["snippet_id"]
+        if snippet_result:
+            # If there's a snippet_result => maybe "confirm", so run snippet
+            if snippet_result.get("action") == "execute_snippet":
+                snippet_id = snippet_result["snippet_id"]
+                from modules.snippet_manager import snippet_storage
+                entry = snippet_storage.get(snippet_id, None)
+                if not entry:
+                    return  # snippet missing?
 
-            # we still have snippet_manager snippet_storage
-            # or a snippet_manager method to fetch it
-            from modules.snippet_manager import snippet_storage
-            entry = snippet_storage.get(snippet_id)
-            if not entry:
-                return  # weird edge case
+                code_str = entry["code"]
+                snippet_channel = entry["channel"]
+                snippet_thread = entry["thread_ts"]
 
-            code_str = entry["code"]
-            snippet_channel = entry["channel"]
-            snippet_thread = entry["thread_ts"]
+                coder_mgr = self.module_manager.get_module("coder_manager")
+                snippet_callable = coder_mgr.create_snippet_callable(code_str)
+                if snippet_callable:
+                    from core.snippets import SnippetsRunner
+                    runner = SnippetsRunner()
+                    runner.run_snippet_now(snippet_callable, snippet_channel, snippet_thread)
+                    # Once done, remove snippet
+                    snippet_storage.pop(snippet_id, None)
 
-            # call coder_manager => snippet_callable
-            coder_mgr = self.module_manager.get_module("coder_manager")
-            snippet_callable = coder_mgr.create_snippet_callable(code_str)
+                    SlackService().post_message(
+                        channel=snippet_channel,
+                        text="Snippet executed successfully!",
+                        thread_ts=snippet_thread
+                    )
+                    logger.info("[BOT_ENGINE] Snippet executed => '%s'", entry["user_request"])
+                else:
+                    SlackService().post_message(
+                        channel=snippet_channel,
+                        text="Failed to create snippet callable.",
+                        thread_ts=snippet_thread
+                    )
+                    logger.error("[BOT_ENGINE] snippet callable creation failed => '%s'", entry["user_request"])
+            # If snippet_result is None or "cancel"/"extend", do nothing more
+        else:
+            # A snippet is pending, but user typed something that isn't confirm/cancel/extend
+            # => do nothing (skip classification)
+            pass
 
-            if snippet_callable:
-                from core.snippets import SnippetsRunner
-                runner = SnippetsRunner()
+        return  # we do NOT continue to classification if snippet is pending
 
-                # block until snippet returns or crashes
-                runner.run_snippet_now(snippet_callable, snippet_channel, snippet_thread)
-
-                # once it returns, remove from snippet_storage
-                snippet_storage.pop(snippet_id, None)
-
-                SlackService().post_message(
-                    channel=snippet_channel,
-                    text="Snippet executed successfully!",
-                    thread_ts=snippet_thread
-                )
-                logger.info("[BOT_ENGINE] Snippet executed => '%s'", entry["user_request"])
-            else:
-                SlackService().post_message(
-                    channel=snippet_channel,
-                    text="Failed to create snippet callable.",
-                    thread_ts=snippet_thread
-                )
-                logger.error("[BOT_ENGINE] snippet callable creation failed => '%s'", entry["user_request"])
-            return
-
-        # 2) Otherwise classification
+        # 2) If no snippet is pending in this thread => classification
         classification = self.classifier_manager.handle_classification(user_text, user_id, channel, thread_ts)
         req_type = classification.get("request_type","ASKTHEWORLD")
         role_info= classification.get("role_info","default")
