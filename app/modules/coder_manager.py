@@ -12,24 +12,21 @@ class CoderManager(BaseModule):
     module_type = "CODER"
 
     def initialize(self):
-        logger.info("[INIT] CoderManager initialized.")
+        logger.info("[INIT] CoderManager: uses coder_system_prompt + coder_safety_prompt.")
         self.gpt_service = ChatGPTService()
 
     def generate_snippet(self, user_requirements):
-        logger.debug("[CODER_MANAGER] generate_snippet => '%s'", user_requirements)
+        logger.debug("[CODER_MANAGER] generate_snippet => %s", user_requirements)
 
         coder_prompt = bot_config["initial_prompts"].get("coder_system_prompt","")
+        safety_prompt= bot_config["initial_prompts"].get("coder_safety_prompt","")
+
         if not coder_prompt:
-            logger.warning("[CODER_MANAGER] coder_system_prompt missing, fallback used.")
-            coder_prompt = "You are a Python code generator, produce def generated_snippet(...)."
-
-        safety_prompt = (
-            "\n\nAlways add a 'stop_snippet' or time check if you create loops. No disclaimers or triple backticks."
-        )
-
+            coder_prompt = "You are a Python code generator. Provide def generated_snippet(...)."
+        # Append the safety prompt for event-driven snippet logic
         conversation = [
-            {"role": "system", "content": coder_prompt + safety_prompt},
-            {"role": "user", "content": user_requirements}
+            {"role":"system","content": coder_prompt + "\n\n" + safety_prompt},
+            {"role":"user","content": user_requirements}
         ]
 
         code_str = self.gpt_service.chat_with_history(
@@ -37,7 +34,7 @@ class CoderManager(BaseModule):
             model="gpt-3.5-turbo",
             temperature=0.3
         )
-        logger.debug("[CODER_MANAGER] Raw snippet code:\n%s", code_str)
+        logger.debug("[CODER_MANAGER] Raw snippet:\n%s", code_str)
         return code_str
 
     def create_snippet_callable(self, code_str):
@@ -46,7 +43,7 @@ class CoderManager(BaseModule):
         try:
             exec(code_str, local_env)
         except Exception as e:
-            logger.error("[CODER_MANAGER] Failed to exec snippet code: %s", e)
+            logger.error("[CODER_MANAGER] Exec snippet code error: %s", e)
             return None
 
         snippet_callable = local_env.get("generated_snippet")
