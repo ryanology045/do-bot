@@ -66,13 +66,14 @@ class SnippetManager(BaseModule):
             "final_decision": None
         }
 
+        # Removed truncation => show entire snippet
         SlackService().post_message(
             channel=channel,
             text=(
                 f":robot_face: *Snippet Proposed (ID={snippet_id})*\n"
                 f"*role_info:* {role_info}\n"
                 f"*User request:* {user_text}\n\n"
-                f"*Snippet Code (truncated)*:\n```python\n{snippet_code[:1000]}...\n```\n\n"
+                f"*Snippet Code*:\n```python\n{snippet_code}\n```\n\n"
                 f"*Snippet Summary:*\n{snippet_summary}\n\n"
                 "Type EXACTLY `confirm` to run, `cancel` to discard, or `extend` to push expiry. "
                 f"(Expires in {expiry_minutes} min.)"
@@ -85,15 +86,26 @@ class SnippetManager(BaseModule):
         If user_text is EXACT 'confirm','cancel','extend', apply snippet action. 
         Return True if it was a snippet command, False otherwise.
         """
-        cmd = user_text.strip().lower()
-        if cmd not in ["confirm","cancel","extend"]:
+
+        raw = user_text.strip().lower()
+        # Remove potential mention to the bot (like "@Do confirm" or "<@UXYZ> confirm")
+        # for safety, we can remove leading mentions/punctuation
+        import re
+        # Remove all <@...> style Slack mentions
+        raw = re.sub(r"<@[^>]+>", "", raw).strip()
+        # Also remove "@" or punctuation at start or end
+        raw = raw.strip("?!.,:;@").strip()
+
+        # Now see if it matches exactly confirm/cancel/extend
+        if raw not in ["confirm","cancel","extend"]:
             return False
 
-        # find snippet in snippet_storage
+        # find snippet in snippet_storage for this channel/thread
         best_sid = None
         best_time = None
         for sid, data in snippet_storage.items():
             if data["channel"] == channel and data["thread_ts"] == thread_ts and data["final_decision"] is None:
+                # pick the "most recent" snippet in that thread
                 if best_time is None or data["start_time"] > best_time:
                     best_sid = sid
                     best_time = data["start_time"]
@@ -101,16 +113,12 @@ class SnippetManager(BaseModule):
         if not best_sid:
             return False
 
-        self._apply_snippet_action(best_sid, cmd)
+        self._apply_snippet_action(best_sid, raw)
         return True
 
     def _apply_snippet_action(self, snippet_id, action_value):
         if snippet_id not in snippet_storage:
-            SlackService().post_message(
-                channel="",
-                text="Snippet not found in this thread.",
-                thread_ts=None
-            )
+            # snippet not found
             return
 
         entry = snippet_storage[snippet_id]
@@ -128,6 +136,7 @@ class SnippetManager(BaseModule):
             entry["final_decision"] = "confirm"
             snippet_storage.pop(snippet_id, None)
             self._execute_snippet(entry)
+
         elif action_value == "cancel":
             entry["final_decision"] = "cancel"
             snippet_storage.pop(snippet_id, None)
@@ -136,6 +145,7 @@ class SnippetManager(BaseModule):
                 text="Snippet canceled. No changes made.",
                 thread_ts=entry["thread_ts"]
             )
+
         elif action_value == "extend":
             new_expires = entry["expires_at"] + timedelta(minutes=5)
             entry["expires_at"] = new_expires
@@ -183,10 +193,12 @@ class SnippetManager(BaseModule):
 
             for sid, data in list(snippet_storage.items()):
                 if data["final_decision"] is not None:
+                    # user already confirmed/canceled
                     continue
 
                 age = (now - data["start_time"]).total_seconds()
 
+                # If it has exceeded watch_secs but not alerted yet, post a warning
                 if (not data["alerted_admin"]) and (age > watch_secs):
                     SlackService().post_message(
                         channel=data["channel"],
@@ -197,6 +209,7 @@ class SnippetManager(BaseModule):
                     )
                     data["alerted_admin"] = True
 
+                # If it's STILL not decided after admin_timeout, forcibly terminate
                 if force_terminate and (age > admin_timeout):
                     logger.error("[SNIPPET_MANAGER] Snippet ID=%s stuck >%ds => forcibly terminating container", sid, admin_timeout)
                     os._exit(1)
