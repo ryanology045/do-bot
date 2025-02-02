@@ -136,7 +136,7 @@ No disclaimers or docstrings.
 This snippet is hypothetical and not yet executed. 
 Summarize it in plain language, focusing on destructive actions or changes. 
 Provide recommended user actions if something looks risky, but no disclaimers or partial refusals.
-        """
+        """,
 
         "bot_context": """
 EXTREMELY THOROUGH BOT_CONTEXT INTERFACE DOCS:
