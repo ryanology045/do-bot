@@ -8,6 +8,10 @@ import base64
 logger = logging.getLogger(__name__)
 
 class GitHubService:
+    """
+    Minimal interface for GitHub actions. Could commit JSON for session rollback if needed.
+    """
+
     def __init__(self):
         self.github_token = os.environ.get("GH_TOKEN")
         if not self.github_token:

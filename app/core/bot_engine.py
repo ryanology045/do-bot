@@ -3,108 +3,94 @@
 import logging
 from .configs import bot_config
 from .module_manager import ModuleManager
+from services.slack_service import SlackService
 
 logger = logging.getLogger(__name__)
 
 class BotEngine:
     """
-    Slack event orchestrator:
-      - Classification => ASKTHEWORLD | ASKTHEBOT | CODER
-      - CODER => advanced code or config logic in coder_manager
-      - ASKTHEBOT => architecture Qs => askthebot_manager
-      - else => normal Q&A => asktheworld_manager
+    Minimal Slack event orchestrator. For snippet logic or typed commands, 
+    we delegate to SnippetManager. For watchers, also SnippetManager.
     """
 
     def __init__(self):
-        logger.info("[INIT] BotEngine: loading modules & personality manager.")
+        logger.info("[INIT] BotEngine: loading modules, no watchers here.")
         self.module_manager = ModuleManager()
         self.module_manager.load_modules()
+
         self.personality_manager = self.module_manager.get_module("personality_manager")
+        self.classifier_manager = self.module_manager.get_module("classification_manager")
+        self.snippet_manager = self.module_manager.get_module("snippet_manager")
 
     def handle_incoming_slack_event(self, event_data):
-        user_text = event_data.get("text", "")
-        channel = event_data.get("channel")
-        thread_ts = event_data.get("thread_ts") or event_data.get("ts")
-        user_id = event_data.get("user")
+        user_text = event_data.get("text","")
+        channel  = event_data.get("channel")
+        thread_ts= event_data.get("thread_ts") or event_data.get("ts")
+        user_id  = event_data.get("user")
 
-        logger.debug("[BOT_ENGINE] Slack event => text='%s', user='%s', channel='%s', thread_ts='%s'",
+        logger.debug("[BOT_ENGINE] Slack event => text='%s', user='%s', ch='%s', thread_ts='%s'",
                      user_text, user_id, channel, thread_ts)
 
-        classifier = self.module_manager.get_module_by_type("CLASSIFIER")
-        if not classifier:
-            logger.error("[BOT_ENGINE] classification_manager not found.")
+        # 1) Ask snippet_manager if this is a typed command
+        if self.snippet_manager.handle_typed_command(user_text, user_id, channel, thread_ts):
             return
 
-        classification_result = classifier.handle_classification(user_text, user_id, channel, thread_ts)
-        request_type = classification_result.get("request_type", "ASKTHEWORLD")
-        role_info = classification_result.get("role_info", "default")
-        extra_data = classification_result.get("extra_data", {})
+        # 2) Otherwise, classify
+        classification = self.classifier_manager.handle_classification(user_text, user_id, channel, thread_ts)
+        req_type = classification.get("request_type","ASKTHEWORLD")
+        role_info= classification.get("role_info","default")
+        extra_data=classification.get("extra_data",{})
 
-        logger.info("[BOT_ENGINE] classification => request_type=%s, role=%s, extra_data=%s",
-                    request_type, role_info, extra_data)
+        logger.info("[BOT_ENGINE] classification => %s, role=%s, extra_data=%s", req_type, role_info, extra_data)
 
-        # Possibly handle new role creation
-        self._maybe_register_new_role(role_info, extra_data, user_text, channel, thread_ts)
-
-        if request_type == "ASKTHEBOT":
+        if req_type == "ASKTHEBOT":
             self._handle_askthebot(user_text, user_id, channel, thread_ts)
-        elif request_type == "CODER":
-            self._handle_coder_flow(user_text, channel, thread_ts, extra_data)
+        elif req_type == "CODER":
+            self._handle_coder_flow(user_text, channel, thread_ts, role_info, extra_data)
         else:
             self._handle_asktheworld_flow(user_text, role_info, extra_data, channel, thread_ts)
 
     def _handle_askthebot(self, user_text, user_id, channel, thread_ts):
-        logger.debug("[BOT_ENGINE] Handling ASKTHEBOT for user_text='%s'", user_text)
-        askbot_module = self.module_manager.get_module("askthebot_manager")
-        if not askbot_module:
+        askbot = self.module_manager.get_module("askthebot_manager")
+        if not askbot:
             logger.error("[BOT_ENGINE] askthebot_manager not found.")
             return
+        response = askbot.handle_bot_question(user_text, user_id, channel, thread_ts)
+        SlackService().post_message(channel=channel, text=response, thread_ts=thread_ts)
 
-        response_text = askbot_module.handle_bot_question(user_text, user_id, channel, thread_ts)
-
-        from services.slack_service import SlackService
-        SlackService().post_message(channel=channel, text=response_text, thread_ts=thread_ts)
-
-    def _handle_coder_flow(self, user_text, channel, thread_ts, extra_data):
-        logger.debug("[BOT_ENGINE] CODER flow => user_text='%s', extra_data=%s", user_text, extra_data)
-
-        # 1) Check if user specifically requested a different channel or no thread
-        override_channel = extra_data.get("override_channel")  # e.g. "#random"
-        override_thread  = extra_data.get("override_thread")   # e.g. None
-
-        final_channel = override_channel if override_channel else channel
-        final_thread  = override_thread if override_thread else thread_ts
-        
+    def _handle_coder_flow(self, user_text, channel, thread_ts, role_info, extra_data):
+        """
+        1) Generate snippet code with coder_manager
+        2) Second pass snippet review with classification_manager
+        3) snippet_manager.propose_snippet(...) => store snippet & instruct user typed commands
+        """
+        from modules.coder_manager import CoderManager
         coder_mgr = self.module_manager.get_module("coder_manager")
         if not coder_mgr:
-            logger.error("[BOT_ENGINE] coder_manager not found.")
+            logger.error("[BOT_ENGINE] coder_manager missing.")
             return
 
-        from services.slack_service import SlackService
-        slack_service = SlackService()
+        # 1) Generate code
+        code_str = coder_mgr.generate_snippet(user_text)
 
-        bot_knowledge = extra_data.get("bot_knowledge", "")
-        coder_input = user_text
-        if bot_knowledge:
-            coder_input += f"\n\n[Bot Knowledge]: {bot_knowledge}"
+        # 2) second pass snippet review prompt from config
+        snippet_review_expanded = bot_config["initial_prompts"].get("snippet_review_expanded","")
+        review_prompt = snippet_review_expanded + f"\n\n```python\n{code_str}\n```"
+        snippet_summary = self.classifier_manager.review_snippet(review_prompt)
 
-        snippet_code = coder_mgr.generate_snippet(coder_input)
-        logger.debug(f"[BOT_ENGINE] Generated snippet:\n{snippet_code}")
-        snippet_callable = coder_mgr.create_snippet_callable(snippet_code)
-        if snippet_callable:
-            from core.snippets import SnippetsRunner
-            sr = SnippetsRunner()
-            sr.run_snippet_now(snippet_callable, final_channel, final_thread)
-            logger.info("[BOT_ENGINE] Code snippet executed successfully for request: %s", user_text)
-            slack_service.post_message(channel=channel, text="Code snippet executed successfully.", thread_ts=thread_ts)
-        else:
-            logger.error("[BOT_ENGINE] Failed to generate snippet code from user_text='%s'", user_text)
-            slack_service.post_message(channel=channel, text="Failed to generate snippet code.", thread_ts=thread_ts)
+        # 3) propose snippet via snippet_manager
+        self.snippet_manager.propose_snippet(
+            snippet_code=code_str,
+            snippet_summary=snippet_summary,
+            user_text=user_text,
+            channel=channel,
+            thread_ts=thread_ts,
+            role_info=role_info
+        )
 
     def _handle_asktheworld_flow(self, user_text, role_info, extra_data, channel, thread_ts):
-        logger.debug("[BOT_ENGINE] ASKTHEWORLD flow => user_text='%s', role_info='%s'", user_text, role_info)
-        asktheworld_module = self.module_manager.get_module_by_type("ASKTHEWORLD")
-        if not asktheworld_module:
+        askworld = self.module_manager.get_module_by_type("ASKTHEWORLD")
+        if not askworld:
             logger.error("[BOT_ENGINE] asktheworld_manager not found.")
             return
 
@@ -112,7 +98,7 @@ class BotEngine:
         system_prompt, default_temp = self.personality_manager.get_system_prompt_and_temp(role_info)
         temperature = role_temp if role_temp is not None else default_temp
 
-        asktheworld_module.handle_inquiry(
+        askworld.handle_inquiry(
             user_text=user_text,
             system_prompt=system_prompt,
             temperature=temperature,
