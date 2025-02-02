@@ -31,11 +31,41 @@ class BotEngine:
         logger.debug("[BOT_ENGINE] Slack event => text='%s', user='%s', ch='%s', thread_ts='%s'",
                      user_text, user_id, channel, thread_ts)
 
-        # 1) Ask snippet_manager if this is a typed command
-        if self.snippet_manager.handle_typed_command(user_text, user_id, channel, thread_ts):
+        # 1) snippet_manager typed command
+        snippet_result = self.snippet_manager.handle_typed_command(user_text, user_id, channel, thread_ts)
+        if snippet_result:
+            if snippet_result.get("action") == "execute_snippet":
+                # Now we do the actual snippet run
+                snippet_entry = snippet_result["snippet"]
+                code_str = snippet_entry["code"]
+                snippet_channel = snippet_entry["channel"]
+                snippet_thread = snippet_entry["thread_ts"]
+
+                # call coder_manager
+                coder_mgr = self.module_manager.get_module("coder_manager")
+                snippet_callable = coder_mgr.create_snippet_callable(code_str)
+                if snippet_callable:
+                    from core.snippets import SnippetsRunner
+                    runner = SnippetsRunner()
+                    runner.run_snippet_now(snippet_callable, snippet_channel, snippet_thread)
+                    SlackService().post_message(
+                        channel=snippet_channel,
+                        text="Snippet executed successfully!",
+                        thread_ts=snippet_thread
+                    )
+                    logger.info("[BOT_ENGINE] Snippet executed => '%s'", snippet_entry["user_request"])
+                else:
+                    SlackService().post_message(
+                        channel=snippet_channel,
+                        text="Failed to create snippet callable.",
+                        thread_ts=snippet_thread
+                    )
+                    logger.error("[BOT_ENGINE] snippet callable creation failed => '%s'", snippet_entry["user_request"])
+
+            # If snippet_result was 'cancel' or 'extend', there's no more to do. So return.
             return
 
-        # 2) Otherwise, classify
+        # 2) Otherwise classification
         classification = self.classifier_manager.handle_classification(user_text, user_id, channel, thread_ts)
         req_type = classification.get("request_type","ASKTHEWORLD")
         role_info= classification.get("role_info","default")
