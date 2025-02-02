@@ -193,3 +193,10 @@ class SnippetManager(BaseModule):
                             thread_ts=data["thread_ts"]
                         )
                     snippet_storage.pop(sid, None)
+
+    def has_pending_snippet_in(self, channel, thread_ts):
+        for sid, data in snippet_storage.items():
+            if data["channel"] == channel and data["thread_ts"] == thread_ts:
+                if data["final_decision"] is None:
+                    return True
+        return False
