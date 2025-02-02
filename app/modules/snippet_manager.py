@@ -14,13 +14,6 @@ from services.slack_service import SlackService
 
 logger = logging.getLogger(__name__)
 
-# snippet_id -> {
-#   "code", "summary", "channel", "thread_ts", "expires_at",
-#   "user_request", "initial_role_info",
-#   "start_time",  # when snippet was proposed
-#   "alerted_admin", # if we've posted a warning
-#   "final_decision" # confirm/cancel or None
-# }
 snippet_storage = {}
 
 class SnippetManager(BaseModule):
@@ -29,15 +22,10 @@ class SnippetManager(BaseModule):
 
     def initialize(self):
         logger.info("[INIT] SnippetManager with watchers for snippet freeze & expiry.")
-        # Start watchers as background threads
         threading.Thread(target=self._snippet_watchdog, daemon=True).start()
         threading.Thread(target=self._cleanup_expired_snippets, daemon=True).start()
 
     def propose_snippet(self, snippet_code, snippet_summary, user_text, channel, thread_ts, role_info="N/A"):
-        """
-        Called by bot_engine or coder flow. 
-        We store the snippet, then post a Slack message instructing typed commands.
-        """
         line_limit = bot_config.get("snippet_line_limit", 250)
         lines = snippet_code.strip().split("\n")
         if len(lines) > line_limit:
@@ -46,7 +34,7 @@ class SnippetManager(BaseModule):
                 text=f"Snippet too large ({len(lines)}/{line_limit} lines). Please simplify or break it down.",
                 thread_ts=thread_ts
             )
-            return
+            return None
 
         expiry_minutes = bot_config.get("snippet_expiration_minutes", 5)
         now = datetime.utcnow()
@@ -66,7 +54,6 @@ class SnippetManager(BaseModule):
             "final_decision": None
         }
 
-        # Removed truncation => show entire snippet
         SlackService().post_message(
             channel=channel,
             text=(
@@ -80,46 +67,39 @@ class SnippetManager(BaseModule):
             ),
             thread_ts=thread_ts
         )
+        return snippet_id
 
     def handle_typed_command(self, user_text, user_id, channel, thread_ts):
         """
-        If user_text is EXACT 'confirm','cancel','extend', apply snippet action. 
-        Return True if it was a snippet command, False otherwise.
+        If user_text is 'confirm','cancel','extend', apply snippet action. 
+        Return a dict with "action": "execute_snippet" if confirm => BotEngine does it
+        Or None if no snippet or if canceled, etc.
         """
-
-        raw = user_text.strip().lower()
-        # Remove potential mention to the bot (like "@Do confirm" or "<@UXYZ> confirm")
-        # for safety, we can remove leading mentions/punctuation
         import re
-        # Remove all <@...> style Slack mentions
+        raw = user_text.strip().lower()
         raw = re.sub(r"<@[^>]+>", "", raw).strip()
-        # Also remove "@" or punctuation at start or end
         raw = raw.strip("?!.,:;@").strip()
 
-        # Now see if it matches exactly confirm/cancel/extend
         if raw not in ["confirm","cancel","extend"]:
-            return False
+            return None
 
-        # find snippet in snippet_storage for this channel/thread
+        # find snippet in snippet_storage
         best_sid = None
         best_time = None
         for sid, data in snippet_storage.items():
             if data["channel"] == channel and data["thread_ts"] == thread_ts and data["final_decision"] is None:
-                # pick the "most recent" snippet in that thread
                 if best_time is None or data["start_time"] > best_time:
                     best_sid = sid
                     best_time = data["start_time"]
 
         if not best_sid:
-            return False
+            return None
 
-        self._apply_snippet_action(best_sid, raw)
-        return True
+        return self._apply_snippet_action(best_sid, raw)
 
     def _apply_snippet_action(self, snippet_id, action_value):
         if snippet_id not in snippet_storage:
-            # snippet not found
-            return
+            return None
 
         entry = snippet_storage[snippet_id]
         now = datetime.utcnow()
@@ -130,12 +110,17 @@ class SnippetManager(BaseModule):
                 thread_ts=entry["thread_ts"]
             )
             snippet_storage.pop(snippet_id, None)
-            return
+            return None
 
         if action_value == "confirm":
             entry["final_decision"] = "confirm"
             snippet_storage.pop(snippet_id, None)
-            self._execute_snippet(entry)
+
+            # Instead of calling coder_manager, we just return an event to BotEngine
+            return {
+                "action": "execute_snippet",
+                "snippet": entry
+            }
 
         elif action_value == "cancel":
             entry["final_decision"] = "cancel"
@@ -145,6 +130,7 @@ class SnippetManager(BaseModule):
                 text="Snippet canceled. No changes made.",
                 thread_ts=entry["thread_ts"]
             )
+            return None
 
         elif action_value == "extend":
             new_expires = entry["expires_at"] + timedelta(minutes=5)
@@ -154,35 +140,11 @@ class SnippetManager(BaseModule):
                 text=f"Snippet expiration extended to {new_expires} UTC.",
                 thread_ts=entry["thread_ts"]
             )
+            return None
 
-    def _execute_snippet(self, snippet_entry):
-        """
-        Actually create snippet_callable and run it. 
-        """
-        from modules.coder_manager import CoderManager
-        coder_mgr = self.module_manager.get_module("coder_manager")
-        snippet_callable = coder_mgr.create_snippet_callable(snippet_entry["code"])
-        if snippet_callable:
-            runner = SnippetsRunner()
-            runner.run_snippet_now(snippet_callable, snippet_entry["channel"], snippet_entry["thread_ts"])
-            SlackService().post_message(
-                channel=snippet_entry["channel"],
-                text="Snippet executed successfully!",
-                thread_ts=snippet_entry["thread_ts"]
-            )
-            logger.info("[SNIPPET_MANAGER] Snippet executed => '%s'", snippet_entry["user_request"])
-        else:
-            SlackService().post_message(
-                channel=snippet_entry["channel"],
-                text="Failed to create snippet callable.",
-                thread_ts=snippet_entry["thread_ts"]
-            )
-            logger.error("[SNIPPET_MANAGER] snippet callable creation failed => '%s'", snippet_entry["user_request"])
+    # No more _execute_snippet here
 
     def _snippet_watchdog(self):
-        """
-        Periodically checks if snippet is stuck => warn admin => kill container if no user action.
-        """
         while True:
             time.sleep(5)
             now = datetime.utcnow()
@@ -193,12 +155,10 @@ class SnippetManager(BaseModule):
 
             for sid, data in list(snippet_storage.items()):
                 if data["final_decision"] is not None:
-                    # user already confirmed/canceled
                     continue
 
                 age = (now - data["start_time"]).total_seconds()
 
-                # If it has exceeded watch_secs but not alerted yet, post a warning
                 if (not data["alerted_admin"]) and (age > watch_secs):
                     SlackService().post_message(
                         channel=data["channel"],
@@ -209,15 +169,11 @@ class SnippetManager(BaseModule):
                     )
                     data["alerted_admin"] = True
 
-                # If it's STILL not decided after admin_timeout, forcibly terminate
                 if force_terminate and (age > admin_timeout):
                     logger.error("[SNIPPET_MANAGER] Snippet ID=%s stuck >%ds => forcibly terminating container", sid, admin_timeout)
                     os._exit(1)
 
     def _cleanup_expired_snippets(self):
-        """
-        Periodically removes expired snippets with no decision.
-        """
         while True:
             time.sleep(30)
             now = datetime.utcnow()
