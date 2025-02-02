@@ -7,15 +7,15 @@ logger = logging.getLogger(__name__)
 
 class SnippetsRunner:
     """
-    Runs GPT-generated snippets. Possibly schedules them if needed.
-    Rely on snippet code itself to check 'stop_snippet' if it has loops.
+    Runs GPT-generated snippets. Possibly schedules them if needed. 
+    The snippet code must be cooperative about 'stop_snippet' if loops.
     """
 
     def __init__(self):
         self.scheduler = TaskScheduler()
 
     def run_snippet_now(self, snippet_callable, *args, **kwargs):
-        logger.info("[SNIPPETS] Running snippet immediately: %s", snippet_callable.__name__)
+        logger.info("[SNIPPETS] Running snippet => %s", snippet_callable.__name__)
         return snippet_callable(*args, **kwargs)
 
     def schedule_snippet(self, run_time, snippet_callable, *args, **kwargs):
