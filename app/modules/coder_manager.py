@@ -16,15 +16,19 @@ class CoderManager(BaseModule):
         self.gpt_service = ChatGPTService()
 
     def generate_snippet(self, user_requirements):
-        logger.debug("[CODER_MANAGER] generate_snippet => user_requirements='%s'", user_requirements)
+        logger.debug("[CODER_MANAGER] generate_snippet => '%s'", user_requirements)
 
-        coder_prompt = bot_config["initial_prompts"].get("coder_system_prompt", "")
+        coder_prompt = bot_config["initial_prompts"].get("coder_system_prompt","")
         if not coder_prompt:
-            logger.warning("[CODER_MANAGER] coder_system_prompt missing. Using fallback.")
-            coder_prompt = "You are a Python code generator. Return def generated_snippet(channel, thread_ts): code."
+            logger.warning("[CODER_MANAGER] coder_system_prompt missing, fallback used.")
+            coder_prompt = "You are a Python code generator, produce def generated_snippet(...)."
+
+        safety_prompt = (
+            "\n\nAlways add a 'stop_snippet' or time check if you create loops. No disclaimers or triple backticks."
+        )
 
         conversation = [
-            {"role": "system", "content": coder_prompt},
+            {"role": "system", "content": coder_prompt + safety_prompt},
             {"role": "user", "content": user_requirements}
         ]
 
@@ -33,7 +37,7 @@ class CoderManager(BaseModule):
             model="gpt-3.5-turbo",
             temperature=0.3
         )
-        logger.debug("[CODER_MANAGER] Raw snippet code from GPT:\n%s", code_str)
+        logger.debug("[CODER_MANAGER] Raw snippet code:\n%s", code_str)
         return code_str
 
     def create_snippet_callable(self, code_str):
@@ -47,23 +51,7 @@ class CoderManager(BaseModule):
 
         snippet_callable = local_env.get("generated_snippet")
         if not snippet_callable:
-            logger.warning("[CODER_MANAGER] snippet code does not define 'generated_snippet'.")
+            logger.warning("[CODER_MANAGER] 'generated_snippet' not found in snippet code.")
         else:
             logger.info("[CODER_MANAGER] snippet_callable created successfully.")
         return snippet_callable
-
-    def review_snippet(self, snippet_text):
-        """
-        Reuses GPT to provide a short summary or 'sanity check' of the snippet code.
-        """
-        # Could be a small chat or classification call
-        logger.debug("[CODER_MANAGER] review_snippet => snippet_text length=%d", len(snippet_text))
-
-        # For simplicity, we do a single message call
-        response = self.gpt_service.classify_chat([
-            {"role": "system", "content": "You are a snippet reviewer. Summarize what the code does."},
-            {"role": "user", "content": snippet_text}
-        ])
-        # 'classify_chat' or 'chat_with_history' depends on your chatgpt_service
-        logger.debug("[CODER_MANAGER] Snippet review output: %s", response)
-        return response
