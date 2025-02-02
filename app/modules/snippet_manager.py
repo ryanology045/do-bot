@@ -14,6 +14,13 @@ from services.slack_service import SlackService
 
 logger = logging.getLogger(__name__)
 
+# snippet_id -> {
+#   "code", "summary", "channel", "thread_ts", "expires_at",
+#   "user_request", "initial_role_info",
+#   "start_time",  # when snippet was proposed
+#   "alerted_admin", # if we've posted a warning
+#   "final_decision" # confirm/cancel or None
+# }
 snippet_storage = {}
 
 class SnippetManager(BaseModule):
@@ -26,6 +33,10 @@ class SnippetManager(BaseModule):
         threading.Thread(target=self._cleanup_expired_snippets, daemon=True).start()
 
     def propose_snippet(self, snippet_code, snippet_summary, user_text, channel, thread_ts, role_info="N/A"):
+        """
+        Called by bot_engine or coder flow. 
+        We store the snippet, then post a Slack message instructing typed commands.
+        """
         line_limit = bot_config.get("snippet_line_limit", 250)
         lines = snippet_code.strip().split("\n")
         if len(lines) > line_limit:
@@ -62,7 +73,7 @@ class SnippetManager(BaseModule):
                 f"*User request:* {user_text}\n\n"
                 f"*Snippet Code*:\n```python\n{snippet_code}\n```\n\n"
                 f"*Snippet Summary:*\n{snippet_summary}\n\n"
-                "Type EXACTLY `confirm` to run, `cancel` to discard, or `extend` to push expiry. "
+                "**Type EXACTLY** `confirm`, `cancel`, or `extend` **in the next message** with no punctuation, no uppercase, no mention.**\n"
                 f"(Expires in {expiry_minutes} min.)"
             ),
             thread_ts=thread_ts
@@ -71,16 +82,14 @@ class SnippetManager(BaseModule):
 
     def handle_typed_command(self, user_text, user_id, channel, thread_ts):
         """
-        If user_text is 'confirm','cancel','extend', apply snippet action. 
-        Return a dict with "action": "execute_snippet" if confirm => BotEngine does it
-        Or None if no snippet or if canceled, etc.
+        Strictly matches EXACT lowercase 'confirm', 'cancel', or 'extend'.
+        e.g. 'Confirm', 'confirm?', '@bot confirm' => are all ignored.
+        
+        Return a dict if snippet was confirmed => BotEngine to run snippet.
+        Otherwise None if no snippet or no valid command.
         """
-        import re
-        raw = user_text.strip().lower()
-        raw = re.sub(r"<@[^>]+>", "", raw).strip()
-        raw = raw.strip("?!.,:;@").strip()
-
-        if raw not in ["confirm","cancel","extend"]:
+        cmd = user_text.strip()  # no .lower(), we want exact
+        if cmd not in ["confirm","cancel","extend"]:
             return None
 
         # find snippet in snippet_storage
@@ -95,7 +104,7 @@ class SnippetManager(BaseModule):
         if not best_sid:
             return None
 
-        return self._apply_snippet_action(best_sid, raw)
+        return self._apply_snippet_action(best_sid, cmd)
 
     def _apply_snippet_action(self, snippet_id, action_value):
         if snippet_id not in snippet_storage:
@@ -116,7 +125,7 @@ class SnippetManager(BaseModule):
             entry["final_decision"] = "confirm"
             snippet_storage.pop(snippet_id, None)
 
-            # Instead of calling coder_manager, we just return an event to BotEngine
+            # return dict so BotEngine can do snippet execution
             return {
                 "action": "execute_snippet",
                 "snippet": entry
@@ -142,8 +151,6 @@ class SnippetManager(BaseModule):
             )
             return None
 
-    # No more _execute_snippet here
-
     def _snippet_watchdog(self):
         while True:
             time.sleep(5)
@@ -163,7 +170,7 @@ class SnippetManager(BaseModule):
                     SlackService().post_message(
                         channel=data["channel"],
                         text=(f":warning: Snippet ID={sid} waiting ~{int(age)}s. "
-                              "Type `confirm`, `cancel`, or `extend` in this thread. "
+                              "Type EXACT `confirm`, `cancel`, or `extend` in this thread. "
                               f"If no action in {int(admin_timeout/60)} min, bot may terminate."),
                         thread_ts=data["thread_ts"]
                     )
