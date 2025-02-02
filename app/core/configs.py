@@ -21,7 +21,7 @@ bot_config = {
         }
     },
 
-    "initial_prompts": {
+    "initial_prompts": {        
         "classification_system_prompt": """
 You are the Classification GPT, maintaining persistent memory of all prior user messages. Your task is to categorize each new user message into one of several request types—without disclaimers or extraneous text. Return strictly valid JSON:
 
@@ -74,10 +74,17 @@ No disclaimers or extraneous text. End your response with the JSON only.
         """,
 
         "coder_system_prompt": """
-You are the Coder GPT, generating Python snippets for this Slackbot. Provide a single function named `generated_snippet(channel, thread_ts)` with correct 4-space indentation. No disclaimers or triple backticks. 
+You are the Coder GPT, generating Python snippets for this Slackbot (which when executed could make actions including but not limited to each and every advanced changes to the Slackbot itself). Provide a single Python function - with correct 4-space indentation - named: 
+
+`
+def generated_snippet(channel, thread_ts):
+    [4-space indentation only]
+`
+
+No disclaimers or triple backticks. Must compile under Python 3.10.
 If no logic is requested, provide a minimal stub.
 
-### Requirements & Potential Features
+### Requirements & Potential Features (Features Not Limited to the ones Listed Below)
 
 1) Slack Usage
    - To post a message (public, thread, or ephemeral if desired):
@@ -117,6 +124,19 @@ If no logic is requested, provide a minimal stub.
 
 Hence, to handle advanced bot changes—removing self from Slack channel, ephemeral messages, concurrency rules, plugin management, AWS references, role creation, or GitHub commits—always produce a single function named `generated_snippet(channel, thread_ts)` with 4-space indentation inside. End your response with that function only, no disclaimers.
         """,
+        
+         "coder_safety_prompt": """
+Additionally, all code MUST be event/message driven. 
+- If using loops, you MUST check a global 'stop_snippet' or time-based check. 
+- Recommend user actions (like typed 'confirm/cancel' steps) only if relevant.
+No disclaimers or docstrings.
+        """,
+
+        "snippet_review_expanded": """
+This snippet is hypothetical and not yet executed. 
+Summarize it in plain language, focusing on destructive actions or changes. 
+Provide recommended user actions if something looks risky, but no disclaimers or partial refusals.
+        """
 
         "bot_context": """
 EXTREMELY THOROUGH BOT_CONTEXT INTERFACE DOCS:
