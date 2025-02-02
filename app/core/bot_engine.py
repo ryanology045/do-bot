@@ -50,9 +50,6 @@ class BotEngine:
         logger.info("[BOT_ENGINE] classification => request_type=%s, role=%s, extra_data=%s",
                     request_type, role_info, extra_data)
 
-        # Possibly handle new role creation
-        self._maybe_register_new_role(role_info, extra_data, user_text, channel, thread_ts)
-
         if request_type == "ASKTHEBOT":
             self._handle_askthebot(user_text, user_id, channel, thread_ts)
         elif request_type == "CODER":
@@ -134,8 +131,8 @@ class BotEngine:
         snippet_storage[snippet_id] = {
             "code": snippet_code,
             "summary": snippet_summary,
-            "channel": channel,
-            "thread_ts": thread_ts,
+            "channel": final_channel,
+            "thread_ts": final_thread,
             "expires_at": expires_at,
             "user_request": user_text,
             "initial_role_info": initial_role_info
@@ -165,21 +162,6 @@ class BotEngine:
             channel=channel,
             user=extra_data.get("user_id"),  # or user from event_data
         )
-        
-        """
-        
-        snippet_callable = coder_mgr.create_snippet_callable(snippet_code)
-        if snippet_callable:
-            from core.snippets import SnippetsRunner
-            sr = SnippetsRunner()
-            sr.run_snippet_now(snippet_callable, final_channel, final_thread)
-            logger.info("[BOT_ENGINE] Code snippet executed successfully for request: %s", user_text)
-            slack_service.post_message(channel=channel, text="Code snippet executed successfully.", thread_ts=thread_ts)
-        else:
-            logger.error("[BOT_ENGINE] Failed to generate snippet code from user_text='%s'", user_text)
-            slack_service.post_message(channel=channel, text="Failed to generate snippet code.", thread_ts=thread_ts)
-
-        """
 
     # Suppose SlackService has a method to post ephemeral with confirm/extend/cancel buttons
     # We'll have an interactive endpoint to handle button clicks.
