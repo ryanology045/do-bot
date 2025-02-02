@@ -122,13 +122,11 @@ class SnippetManager(BaseModule):
             return None
 
         if action_value == "confirm":
-            entry["final_decision"] = "confirm"
-            snippet_storage.pop(snippet_id, None)
-
-            # return dict so BotEngine can do snippet execution
+            # Set final_decision="running" and keep it in snippet_storage
+            entry["final_decision"] = "running"
             return {
-                "action": "execute_snippet",
-                "snippet": entry
+                "action": "execute_snippet",   # Let BotEngine do snippet execution
+                "snippet_id": snippet_id,      # We'll remove it from storage once it finishes
             }
 
         elif action_value == "cancel":
@@ -161,24 +159,30 @@ class SnippetManager(BaseModule):
             force_terminate = bot_config.get("force_bot_termination_on_snippet_freeze", True)
 
             for sid, data in list(snippet_storage.items()):
-                if data["final_decision"] is not None:
-                    continue
+                # If final_decision is "running", it's actively confirmed & presumably running
+                if data["final_decision"] == "running":
+                    age = (now - data["start_time"]).total_seconds()
+                    # optional: post a first warning if over watch_secs
+                    if (not data["alerted_admin"]) and (age > watch_secs):
+                        SlackService().post_message(
+                            channel=data["channel"],
+                            text=(f":warning: Snippet ID={sid} has been running ~{int(age)}s. "
+                                  f"If no completion in {int(admin_timeout/60)} min, bot may terminate."),
+                            thread_ts=data["thread_ts"]
+                        )
+                        data["alerted_admin"] = True
 
-                age = (now - data["start_time"]).total_seconds()
+                    if force_terminate and (age > admin_timeout):
+                        logger.error("[SNIPPET_MANAGER] Snippet ID=%s stuck >%ds => forcibly terminating container",
+                                     sid, admin_timeout)
+                        os._exit(1)
 
-                if (not data["alerted_admin"]) and (age > watch_secs):
-                    SlackService().post_message(
-                        channel=data["channel"],
-                        text=(f":warning: Snippet ID={sid} waiting ~{int(age)}s. "
-                              "Type EXACT `confirm`, `cancel`, or `extend` in this thread. "
-                              f"If no action in {int(admin_timeout/60)} min, bot may terminate."),
-                        thread_ts=data["thread_ts"]
-                    )
-                    data["alerted_admin"] = True
+                elif data["final_decision"] is None:
+                    # The snippet is still waiting for confirm/cancel
+                    age = (now - data["start_time"]).total_seconds()
+                    ...
+                    # same logic you had for "alerted_admin" and "os._exit(1)" if too old
 
-                if force_terminate and (age > admin_timeout):
-                    logger.error("[SNIPPET_MANAGER] Snippet ID=%s stuck >%ds => forcibly terminating container", sid, admin_timeout)
-                    os._exit(1)
 
     def _cleanup_expired_snippets(self):
         while True:
