@@ -10,11 +10,7 @@ logger = logging.getLogger(__name__)
 
 class SlackService:
     """
-    Pure Slack interface:
-      - register_routes
-      - post_message
-      - remove_self_from_channel
-    No snippet-specific or advanced domain logic.
+    Pure Slack interface: register_routes, post_message, remove_self_from_channel.
     """
 
     def __init__(self, bot_engine=None):
@@ -48,7 +44,7 @@ class SlackService:
         try:
             self.web_client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
         except Exception as e:
-            logger.error(f"Failed to post Slack message: {e}")
+            logger.error(f"SlackService post_message error: {e}")
 
     def remove_self_from_channel(self, channel_id):
         from slack_sdk.errors import SlackApiError
