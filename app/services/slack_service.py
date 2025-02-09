@@ -2,7 +2,6 @@
 
 import os
 import logging
-import re
 from flask import request, jsonify
 from slack_sdk import WebClient
 from slack_sdk.signature import SignatureVerifier
@@ -22,7 +21,8 @@ class SlackService:
         self.signature_verifier = SignatureVerifier(self.signing_secret)
         self.web_client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN", ""))
 
-        # The Slack bot's user ID (e.g. "U089Q3FGMKQ"). You can set in environment or know from Slack.
+        # The Slack bot's user ID (e.g. "U089Q3FGMKQ"). 
+        # Typically set via environment or found from Slack (whoami).
         self.bot_user_id = os.environ.get("BOT_USER_ID", "")
 
     def register_routes(self, app):
@@ -34,14 +34,14 @@ class SlackService:
             if not self._is_request_valid(request):
                 return "Invalid request signature", 401
 
-            # respond quickly so Slack doesn't keep retrying
+            # Respond quickly so Slack doesn't retry
             resp = {"status": "ok"}
 
             event_data = request.json.get("event", {})
-            event_id = request.json.get("event_id", None)
+            event_id = request.json.get("event_id")
             event_type = event_data.get("type", "")
             user_id = event_data.get("user", "")
-            bot_id = event_data.get("bot_id", None)
+            bot_id = event_data.get("bot_id")
 
             # 1) Skip duplicates
             if event_id and event_id in processed_event_ids:
@@ -58,20 +58,21 @@ class SlackService:
                 logger.debug("Skipping event from BOT_USER_ID=%s", user_id)
                 return jsonify(resp), 200
 
-            # 3) Distinguish app_mention vs message
+            # 3) Distinguish app_mention vs. message
             if event_type == "app_mention":
-                # The user explicitly tagged the bot => handle
+                # The user explicitly tagged the bot => handle in bot_engine
                 self.bot_engine.handle_incoming_slack_event(event_data)
 
             elif event_type == "message":
-                # Possibly typed snippet commands
+                # Possibly typed snippet commands, or snippet is pending
                 channel_id = event_data.get("channel")
                 thread_ts  = event_data.get("thread_ts") or event_data.get("ts")
 
-                # If there's a snippet pending, handle. Otherwise ignore normal messages.
+                # If there's a snippet pending in that thread, 
+                # we let bot_engine handle typed commands or confirm/cancel/extend
                 if self.bot_engine.has_pending_snippet(channel_id, thread_ts):
                     self.bot_engine.handle_incoming_slack_event(event_data)
-                # else do nothing
+                # else do nothing for normal messages (no mention, no snippet pending)
 
             return jsonify(resp), 200
 
